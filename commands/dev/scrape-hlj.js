@@ -3,6 +3,7 @@ const htmlparser2 = require('htmlparser2');
 
 // Base URL for HLJ Gundam kits search
 const baseURL = 'https://www.hlj.com/search/?Page=';
+const filterURL = "&MacroType2=High+Grade+Kits&MacroType2=High-Grade+Kits&MacroType2=Master+Grade+Kits&MacroType2=Master-Grade+Kits&MacroType2=Real-Grade+Kits&MacroType2=Real+Grade+Kits&MacroType2=Injection+Kits&MacroType2=Other+Gundam+Kits&MacroType2=Gundam+Kits";
 // Rate limit settings: delay between each request in milliseconds (e.g., 1000ms = 1 second)
 function rateLimitDelay(){
     return 500*(1 + Math.random());
@@ -21,9 +22,11 @@ function getHeaders() {
     };
 }
 
+
+
 async function getCsrf() {
     try {
-        const initialResponse = await axios.get(`${baseURL}1&MacroType2=Gundam+Kits&MacroType2=Injection+Kits&AdultItem=0`, {
+        const initialResponse = await axios.get(`${baseURL}1${filterURL}`, {
             withCredentials: true,
             headers: getHeaders()
         });
@@ -67,7 +70,7 @@ async function getLivePrice(item_codes, token) {
 
 // Function to scrape product names from a single page
 async function scrapeProductsFromPage(pageNumber, token) {
-    const url = `${baseURL}${pageNumber}&MacroType2=Gundam+Kits&MacroType2=Injection+Kits&AdultItem=0`;
+    const url = `${baseURL}${pageNumber}${filterURL}`;
 
     try {
         const { data } = await axios.get(url, {
@@ -129,7 +132,7 @@ async function scrapeProductsFromPage(pageNumber, token) {
 // Function to get the total number of pages from the search results
 async function getTotalPages() {
     try {
-        const { data } = await axios.get(`${baseURL}1&MacroType2=Gundam+Kits&MacroType2=Injection+Kits&AdultItem=0`, {
+        const { data } = await axios.get(`${baseURL}1${filterURL}`, {
             headers: getHeaders(),
         });
 
@@ -187,7 +190,7 @@ async function scrapeAllProducts() {
     }
 
     console.log(`Scraping complete. Total products scraped: ${allProductNames.length}`);
-    console.log(`Total time waited: ${totalWaitTime}`);
+    console.log(`Total time waited: ${totalWaitTime/1000}s = ${totalWaitTime/60000} min`);
     return {
         "products" : allProductNames,
         "iteminfo" : allItemInfos
