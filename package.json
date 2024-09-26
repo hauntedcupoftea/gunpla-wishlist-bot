@@ -1,0 +1,10 @@
+{
+  "name": ".",
+  "version": "1",
+  "description": "a discord bot for people to add wished gunpla to and then be pinged by users who want to know who wants that gunpla kit.",
+  "main": "index.js",
+  "repository": "https://github.com/hauntedcupoftea/gunpla-wishlist-bot",
+  "author": "hauntedcupoftea <andydchauhan@gmail.com>",
+  "license": "MIT",
+  "private": false
+}
