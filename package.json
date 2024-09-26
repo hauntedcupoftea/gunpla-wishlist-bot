@@ -1,10 +1,23 @@
 {
-  "name": ".",
+  "name": "haro",
   "version": "1",
   "description": "a discord bot for people to add wished gunpla to and then be pinged by users who want to know who wants that gunpla kit.",
   "main": "index.js",
   "repository": "https://github.com/hauntedcupoftea/gunpla-wishlist-bot",
   "author": "hauntedcupoftea <andydchauhan@gmail.com>",
   "license": "MIT",
-  "private": false
+  "private": false,
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "discord.js": "^14.16.2",
+    "dotenv": "^16.4.5",
+    "htmlparser2": "^9.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7",
+    "prisma": "^5.20.0"
+  },
+  "scripts": {
+    "dev": "nodemon index.js"
+  }
 }

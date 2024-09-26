@@ -1,0 +1,39 @@
+services:
+  # Discord bot service
+  discord-bot:
+    build: .
+    container_name: discord_bot
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    volumes:
+      - .:/app
+    command: yarn dev
+    networks:
+      - gunpla-wishlist-bot
+
+  # PostgreSQL database service
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - gunpla-wishlist-bot
+
+# Define named volumes for persistence
+volumes:
+  postgres_data:
+networks:
+  gunpla-wishlist-bot:
+    name: gunpla-wishlist-bot
+    driver: bridge
