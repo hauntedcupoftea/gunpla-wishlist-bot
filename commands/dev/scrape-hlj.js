@@ -5,7 +5,7 @@ const htmlparser2 = require('htmlparser2');
 const baseURL = 'https://www.hlj.com/search/?Page=';
 // Rate limit settings: delay between each request in milliseconds (e.g., 1000ms = 1 second)
 function rateLimitDelay(){
-    return 2000(1 + Math.random());
+    return 500*(1 + Math.random());
 } 
 
 // Function to simulate realistic headers for axios requests
@@ -48,8 +48,25 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function getLivePrice(item_codes, token) {
+    const itemCodesString = item_codes.join(',');
+    try {
+        const { data } = await axios.get('https://www.hlj.com/search/livePrice/', {
+            params: {
+                item_codes: itemCodesString,
+                csrfmiddlewaretoken: token
+            },
+            headers: getHeaders()
+        });
+        return data;
+    } catch (error) {
+        console.error('Error fetching live price:', error);
+        throw error;
+    }
+}
+
 // Function to scrape product names from a single page
-async function scrapeProductNamesFromPage(pageNumber) {
+async function scrapeProductsFromPage(pageNumber, token) {
     const url = `${baseURL}${pageNumber}&MacroType2=Gundam+Kits&MacroType2=Injection+Kits&AdultItem=0`;
 
     try {
@@ -94,15 +111,17 @@ async function scrapeProductNamesFromPage(pageNumber) {
         parser.write(data);
         parser.end();
 
+        const itemInfo = await getLivePrice(itemCodesArray, token);
+
         return {
             productNames: productNames.map(name => name.trim()).filter(name => name),
-            itemCodes: itemCodesArray, // Return item codes array
+            itemInfo: itemInfo, // Return item codes array
         };
     } catch (error) {
         console.error(`Error scraping page ${pageNumber}:`, error.message);
         return {
             productNames: [],
-            itemCodes: [],
+            itemInfo: [],
         };
     }
 }
@@ -145,63 +164,49 @@ async function getTotalPages() {
 async function scrapeAllProducts() {
     const totalPages = await getTotalPages();
     const allProductNames = [];
-    const allItemCodes = [];
+    const allItemInfos = [];
+    let totalWaitTime = 0;
+
+    const token = await getCsrf();
 
     for (let i = 1; i <= totalPages; i++) {
-        const productNames = await scrapeProductNamesFromPage(i);
+        const productNames = await scrapeProductsFromPage(i, token);
         allProductNames.push(...productNames.productNames);
-        allItemCodes.push(...productNames.itemCodes);
+        allItemInfos.push(productNames.itemInfo);
 
-        console.log(`Scraped page ${i}/${totalPages} - 
-            Found ${productNames.productNames.length} products, ${productNames.productNames.length} item_codes on this page`);
+        console.log(`Scraped page ${i}/${totalPages} (${i/totalPages*100}%): 
+    Found ${productNames.productNames.length} products.
+    Found ${Object.keys(productNames.itemInfo).length} item_codes on this page`);
 
         if (i < totalPages) {
-            console.log(`Waiting ${rateLimitDelay / 1000} seconds before scraping the next page...`);
-            await sleep(rateLimitDelay());
+            const rate = rateLimitDelay()
+            console.log(`Waiting ${rate / 1000}s before scraping the next page...`);
+            await sleep(rate);
+            totalWaitTime = totalWaitTime + rate
         }
     }
 
     console.log(`Scraping complete. Total products scraped: ${allProductNames.length}`);
+    console.log(`Total time waited: ${totalWaitTime}`);
     return {
         "products" : allProductNames,
-        "item_codes" : allItemCodes
+        "iteminfo" : allItemInfos
     };
 }
 
-async function getLivePrice(item_codes) {
-    const token = await getCsrf();
-    const itemCodesString = item_codes.join(',');
-    try {
-        const { data } = await axios.get('https://www.hlj.com/search/livePrice/', {
-            params: {
-                item_codes: itemCodesString,
-                csrfmiddlewaretoken: token
-            },
-            headers: getHeaders()
-        });
-        return data;
-    } catch (error) {
-        console.error('Error fetching live price:', error);
-        throw error;
-    }
-}
-
-
 // Start scraping and handle the result or any errors
-(async () => {
+async function main() {
     try {
         const products = await scrapeAllProducts();
         await sleep(rateLimitDelay())
-        const productInfo = await getLivePrice(products.item_codes);
         const FileSystem = require("fs");
-        FileSystem.writeFile('./data/hlj-products.json', JSON.stringify(products), (error) => {
+        FileSystem.writeFile('./data/hlj-products.json', JSON.stringify(products, undefined, 4), (error) => {
             if (error) throw error;
         });
-        FileSystem.writeFile('./data/hlj-liveprice.json', JSON.stringify(productInfo), (error) => {
-            if (error) throw error;
-        });
-        console.log('All products scraped and saved at ./data/hlj.json');
+        console.log('All products scraped and saved at ./data/hlj-products.json');
     } catch (error) {
         console.error('Failed to scrape products:', error.message);
     }
-})();
+}
+
+main();
