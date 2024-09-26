@@ -17,7 +17,7 @@ model Kit {
 model Wishlist {
   id        Int      @id @default(autoincrement())
   userId    String
-  note      String
+  note      String?  
   kitId     Int
   createdAt DateTime @default(now())
   kit       Kit      @relation(fields: [kitId], references: [id])

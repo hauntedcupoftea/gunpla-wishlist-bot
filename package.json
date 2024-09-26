@@ -9,6 +9,7 @@
   "private": false,
   "dependencies": {
     "@prisma/client": "^5.20.0",
+    "axios": "^1.7.7",
     "discord.js": "^14.16.2",
     "dotenv": "^16.4.5",
     "htmlparser2": "^9.1.0"

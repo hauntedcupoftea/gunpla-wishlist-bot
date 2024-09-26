@@ -9,18 +9,24 @@ module.exports = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('add')
-                .setDescription('Add an item to your wishlist')
+                .setDescription('Add an kit to your wishlist')
                 .addStringOption(option =>
                     option
-                        .setName('item')
-                        .setDescription('The item to add')
+                        .setName('kit')
+                        .setDescription('The kit to add')
                         .setRequired(true)
                         .setAutocomplete(true)
                 )
+                .addStringOption(option =>
+                    option
+                        .setName('notes')
+                        .setDescription('Any notes (such as looking for decals, or any special condition)')
+                        .setRequired(false)
+                )
         ),
     async autocomplete(interaction) {
-        const focusedValue = interaction.options.getString('item');
-        if (focusedValue.length > 3) {
+        const focusedValue = interaction.options.getString('kit');
+        if (focusedValue.length > 2) {
             const results = await prisma.kit.findMany({
                 where: {
                     name: {
@@ -41,18 +47,18 @@ module.exports = {
     },
     async execute(interaction) {
         if (interaction.options.getSubcommand() === 'add') {
-            const item = interaction.options.getString('item');
+            const kit = interaction.options.getString('kit');
             try {
                 await prisma.wishlist.create({
                     data: {
                         userId: interaction.user.id,
-                        item: item,
+                        kit: kit,
                     },
                 });
-                await interaction.reply(`Added **${item}** to your wishlist!`);
+                await interaction.reply(`Added **${kit}** to your wishlist!`);
             } catch (error) {
                 console.error(error);
-                await interaction.reply({ content: 'There was an error while adding the item to your wishlist.', ephemeral: true });
+                await interaction.reply({ content: 'There was an error while adding the kit to your wishlist.', ephemeral: true });
             }
         } else {
             await interaction.reply({ content: 'Invalid subcommand.', ephemeral: true });
