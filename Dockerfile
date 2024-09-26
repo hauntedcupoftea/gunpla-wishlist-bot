@@ -17,7 +17,8 @@ RUN yarn install --frozen-lockfile
 COPY . .
 
 # Expose any required port (optional)
-EXPOSE 3000
+EXPOSE 5555 
+# +3000 # if/when we get a dashboard
 
 # Start the bot (replace 'yarn dev' with 'yarn start' if in production)
 CMD ["yarn", "dev"]

@@ -7,15 +7,18 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
+      - db
     volumes:
       - .:/app
-    command: yarn dev
+    command: >
+      sh -c "yarn prisma generate &&
+        yarn prisma db push &&
+        yarn dev"
     networks:
       - gunpla-wishlist-bot
 
   # PostgreSQL database service
-  postgres:
+  db:
     image: postgres:16-alpine
     container_name: postgres_db
     restart: always
@@ -30,7 +33,6 @@ services:
     networks:
       - gunpla-wishlist-bot
 
-# Define named volumes for persistence
 volumes:
   postgres_data:
 networks:
