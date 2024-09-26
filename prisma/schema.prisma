@@ -12,3 +12,22 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+model Kit {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(500)
+  price     Decimal  @db.Money
+
+  wishlists Wishlist[]
+}
+
+model Wishlist {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  kitId     Int
+  createdAt DateTime @default(now())
+
+  kit       Kit      @relation(fields: [kitId], references: [id])
+
+  @@unique([userId, kitId])
+}
