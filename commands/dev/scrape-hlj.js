@@ -4,7 +4,9 @@ const htmlparser2 = require('htmlparser2');
 // Base URL for HLJ Gundam kits search
 const baseURL = 'https://www.hlj.com/search/?Page=';
 // Rate limit settings: delay between each request in milliseconds (e.g., 1000ms = 1 second)
-const rateLimitDelay = 1500; // 1.5 seconds between each request
+function rateLimitDelay(){
+    return 2000(1 + Math.random());
+} 
 
 // Function to simulate realistic headers for axios requests
 function getHeaders() {
@@ -19,17 +21,15 @@ function getHeaders() {
     };
 }
 
-let csrfToken = ''; // Variable to store the CSRF token
-
 async function getCsrf() {
     try {
-        // First request to get the CSRF token
         const initialResponse = await axios.get(`${baseURL}1&MacroType2=Gundam+Kits&MacroType2=Injection+Kits&AdultItem=0`, {
-            withCredentials: true, // Ensure that cookies are included in the request
+            withCredentials: true,
             headers: getHeaders()
         });
 
-        // Extract the CSRF token from the cookies
+        let csrfToken = ''; // Variable to store the CSRF token
+
         const cookies = initialResponse.headers['set-cookie'];
         if (cookies) {
             const csrfCookie = cookies.find(cookie => cookie.startsWith('csrftoken='));
@@ -37,6 +37,7 @@ async function getCsrf() {
                 csrfToken = csrfCookie.split(';')[0].split('=')[1]; // Get the value of the CSRF token
             }
         }
+        return csrfToken;
     } catch (error) {
         console.error('Error fetching data:', error.message);
     }
@@ -53,42 +54,36 @@ async function scrapeProductNamesFromPage(pageNumber) {
 
     try {
         const { data } = await axios.get(url, {
-            headers: getHeaders(), // Use realistic headers in each request
+            headers: getHeaders(),
         });
         const productNames = [];
-        const itemCodes = [];
+        let itemCodes = '';
 
-        // Use htmlparser2 to parse the HTML
+        const itemCodesRegex = /item_codes\s*=\s*"(.*?)"/;
+        const itemCodesMatch = itemCodesRegex.exec(data);
+        if (itemCodesMatch && itemCodesMatch[1]) {
+            itemCodes = itemCodesMatch[1];
+        }
+
+        const itemCodesArray = itemCodes.split(',').map(code => code.trim().toUpperCase());
+
         const parser = new htmlparser2.Parser({
             isProductName: false,
-            currentHref: '', // Store the current href
             onopentag(name, attribs) {
                 // We're looking for product names inside <p class="product-item-name">
                 if (name === 'p' && attribs.class && attribs.class.includes('product-item-name')) {
                     this.isProductName = true; // Mark the start of the product name
-                } else if (name === 'a' && this.isProductName) {
-                    // Capture the href when we're in a product name
-                    this.currentHref = attribs.href; // Store the href attribute
                 }
             },
             onclosetag(name) {
                 // Reset when closing the <p> tag
                 if (name === 'p') {
-                    this.isProductName = false; // Reset after capturing the name
-                    this.currentHref = ''; // Reset the href
+                    this.isProductName = false;
                 }
             },
             ontext(text) {
                 if (this.isProductName) {
-                    // Directly push the text, preserving ampersands
-                    productNames.push(text.trim()); // Keep the raw text
-
-                    // Extract item code from the href
-                    const itemCodeMatch = this.currentHref.match(/-(\w+)$/); // Match the last part of the URL after the last '-'
-                    if (itemCodeMatch) {
-                        const itemCode = itemCodeMatch[1].toUpperCase(); // Convert to uppercase
-                        itemCodes.push(itemCode); // Store the item code
-                    }
+                    productNames.push(text); // Keep the raw text
                 }
             },
             onerror(err) {
@@ -99,16 +94,16 @@ async function scrapeProductNamesFromPage(pageNumber) {
         parser.write(data);
         parser.end();
 
-        console.log(productNames, itemCodes)
-
-        // Clean up product names: trim whitespace and filter out empty strings
         return {
-            productNames: productNames.filter(name => name), // Keep only non-empty strings
-            itemCodes, // Return item codes
+            productNames: productNames.map(name => name.trim()).filter(name => name),
+            itemCodes: itemCodesArray, // Return item codes array
         };
     } catch (error) {
         console.error(`Error scraping page ${pageNumber}:`, error.message);
-        return { productNames: [], itemCodes: [] }; // Return empty arrays on error
+        return {
+            productNames: [],
+            itemCodes: [],
+        };
     }
 }
 
@@ -116,39 +111,33 @@ async function scrapeProductNamesFromPage(pageNumber) {
 async function getTotalPages() {
     try {
         const { data } = await axios.get(`${baseURL}1&MacroType2=Gundam+Kits&MacroType2=Injection+Kits&AdultItem=0`, {
-            headers: getHeaders(), // Use realistic headers in each request
+            headers: getHeaders(),
         });
 
-        // Use htmlparser2 to parse the HTML
         const parser = new htmlparser2.Parser({
-            onopentag(name, attribs) {
-                // No need for any specific open tag handling
-            },
+            onopentag(name, attribs) {},
             ontext(text) {
-                // Look for the specific text indicating total results
                 const match = text.match(/Showing (\d+) results/);
                 if (match) {
                     const totalResults = parseInt(match[1], 10);
-                    // Assuming 24 items per page
                     const itemsPerPage = 24;
                     totalPages = Math.ceil(totalResults / itemsPerPage);
                 }
             },
             onclosetag(name) {
-                // No need for any specific close tag handling
             },
             onerror(err) {
                 console.error("Parsing error:", err);
             }
-        }, { decodeEntities: true }); // Enable entity decoding
+        }, { decodeEntities: true });
 
         parser.write(data);
         parser.end();
 
-        return totalPages; // Return the calculated total pages
+        return totalPages;
     } catch (error) {
         console.error(`Error fetching total pages:`, error.message);
-        return 0; // Return 0 in case of an error
+        return 0;
     }
 }
 
@@ -156,30 +145,62 @@ async function getTotalPages() {
 async function scrapeAllProducts() {
     const totalPages = await getTotalPages();
     const allProductNames = [];
+    const allItemCodes = [];
 
-    // Scrape each page, displaying progress as you go
     for (let i = 1; i <= totalPages; i++) {
         const productNames = await scrapeProductNamesFromPage(i);
-        allProductNames.push(productNames);
+        allProductNames.push(...productNames.productNames);
+        allItemCodes.push(...productNames.itemCodes);
 
-        console.log(`Scraped page ${i}/${totalPages} - Found ${productNames.length} products on this page`);
+        console.log(`Scraped page ${i}/${totalPages} - 
+            Found ${productNames.productNames.length} products, ${productNames.productNames.length} item_codes on this page`);
 
-        // Rate limiting: wait for a specified delay between each request
         if (i < totalPages) {
             console.log(`Waiting ${rateLimitDelay / 1000} seconds before scraping the next page...`);
-            await sleep(rateLimitDelay);
+            await sleep(rateLimitDelay());
         }
     }
 
     console.log(`Scraping complete. Total products scraped: ${allProductNames.length}`);
-    return allProductNames;
+    return {
+        "products" : allProductNames,
+        "item_codes" : allItemCodes
+    };
 }
+
+async function getLivePrice(item_codes) {
+    const token = await getCsrf();
+    const itemCodesString = item_codes.join(',');
+    try {
+        const { data } = await axios.get('https://www.hlj.com/search/livePrice/', {
+            params: {
+                item_codes: itemCodesString,
+                csrfmiddlewaretoken: token
+            },
+            headers: getHeaders()
+        });
+        return data;
+    } catch (error) {
+        console.error('Error fetching live price:', error);
+        throw error;
+    }
+}
+
 
 // Start scraping and handle the result or any errors
 (async () => {
     try {
         const products = await scrapeAllProducts();
-        console.log('All products scraped:', products);
+        await sleep(rateLimitDelay())
+        const productInfo = await getLivePrice(products.item_codes);
+        const FileSystem = require("fs");
+        FileSystem.writeFile('./data/hlj-products.json', JSON.stringify(products), (error) => {
+            if (error) throw error;
+        });
+        FileSystem.writeFile('./data/hlj-liveprice.json', JSON.stringify(productInfo), (error) => {
+            if (error) throw error;
+        });
+        console.log('All products scraped and saved at ./data/hlj.json');
     } catch (error) {
         console.error('Failed to scrape products:', error.message);
     }
