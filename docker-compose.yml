@@ -11,9 +11,10 @@ services:
     volumes:
       - .:/app
     command: >
-      sh -c "yarn prisma generate &&
-        yarn prisma db push &&
-        yarn dev"
+      sh -c "yarn prisma generate && \
+            yarn prisma db push && \
+            yarn prisma db seed && \
+            yarn dev"
     networks:
       - gunpla-wishlist-bot
 

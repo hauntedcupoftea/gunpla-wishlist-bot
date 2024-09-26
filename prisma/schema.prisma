@@ -8,20 +8,27 @@ datasource db {
 }
 
 model Kit {
-  id        Int        @id @default(autoincrement())
-  name      String     @db.VarChar(500)
-  item_code String?
-  price     Decimal?   @db.Money
-  wishlists Wishlist[]
+  id             String   @id @default(uuid()) 
+  item_code      String   @unique
+  release_date   String?
+  jpy_price      Int
+  availability   String
+  stock_status   String?
+  product_name   String
+
+  wishlists      Wishlist[]
+  @@index([item_code])
 }
 
 model Wishlist {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid()) 
   userId    String
-  note      String?  
-  kitId     Int
+  note      String?
+  kitId     String   
   createdAt DateTime @default(now())
   kit       Kit      @relation(fields: [kitId], references: [id])
 
   @@unique([userId, kitId])
+  @@index([kitId])
+  @@index([userId])
 }
