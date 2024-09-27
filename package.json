@@ -21,7 +21,7 @@
   },
   "scripts": {
     "dev": "nodemon index.js",
-    "scrape": "node ./commands/dev/scrape-hlj.js",
+    "scrape": "node ./commands/util/scrape-hlj.js",
     "start": "node index.js"
   },
   "prisma": {
