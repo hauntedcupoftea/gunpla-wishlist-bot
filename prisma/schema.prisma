@@ -17,7 +17,7 @@ model Kit {
   product_name   String
 
   wishlists      Wishlist[]
-  @@index([item_code])
+  @@index([product_name, item_code])
 }
 
 model Wishlist {

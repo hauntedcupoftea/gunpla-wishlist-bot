@@ -52,7 +52,7 @@ async function execute(interaction) {
         await interaction.reply("Kit not found in the database, please add it.")
     } else {
         const kitInfo = `- Release: ${kit.release_date}\n- Price in JPY: ¥${kit.jpy_price}\n- HLJ Stock: ${kit.availability}`
-        if (kit.availability == "In Stock") {
+        if (kit.availability === "In Stock") {
             kitInfo += `\n- HLJ Stock Status: ${kit.stock_status}`
         }
         await interaction.reply(`Here's what we found about ${kit.product_name}\n${kitInfo}`)

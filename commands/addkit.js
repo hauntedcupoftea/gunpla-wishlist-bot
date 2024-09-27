@@ -52,6 +52,7 @@ async function execute(interaction) {
                 availability: availability,
                 stock_status: stockStatus,
                 product_name: productName,
+                item_code: productName
             },
         });
         await interaction.reply(`Successfully added the kit **${newKit.product_name}**!`);

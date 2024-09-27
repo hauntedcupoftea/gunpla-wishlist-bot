@@ -20,7 +20,9 @@
     "prisma": "^5.20.0"
   },
   "scripts": {
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "scrape": "node ./commands/dev/scrape-hlj.js",
+    "start": "node index.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
