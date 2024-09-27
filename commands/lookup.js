@@ -48,9 +48,15 @@ async function execute(interaction) {
         },
     });
 
+    const kitName = await prisma.kit.findUnique({
+        where: {
+            id: kitId,
+        },
+    })
+
     if (wishlists.length > 0) {
         const usersLookingForKit = wishlists.map(item => `- <@${item.userId}>`).join('\n'); // Adjust based on how you store user information
-        await interaction.reply(`Users looking for this kit:\n${usersLookingForKit}`);
+        await interaction.reply(`Users looking for **${kitName.product_name}**:\n${usersLookingForKit}`);
     } else {
         await interaction.reply("No users are currently looking for this kit.");
     }
