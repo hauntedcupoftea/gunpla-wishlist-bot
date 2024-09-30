@@ -13,7 +13,6 @@ services:
     command: >
       /bin/sh -c "
         prisma migrate deploy &&
-        yarn scrape &&
         prisma db seed &&
         yarn start
       "
