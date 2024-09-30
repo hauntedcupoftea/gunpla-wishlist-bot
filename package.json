@@ -13,11 +13,11 @@
     "cli-progress": "^3.12.0",
     "discord.js": "^14.16.2",
     "dotenv": "^16.4.5",
-    "htmlparser2": "^9.1.0",
-    "prisma": "^5.20.0"
+    "htmlparser2": "^9.1.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.7"
+    "nodemon": "^3.1.7",
+    "prisma": "^5.20.0"
   },
   "scripts": {
     "dev": "nodemon index.js",

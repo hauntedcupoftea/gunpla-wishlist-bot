@@ -16,9 +16,12 @@ RUN yarn install --frozen-lockfile
 # Copy the rest of the bot's source code
 COPY . .
 
+# Ensure Prisma binaries are available in PATH
+RUN yarn global add prisma
+
 # Expose any required port (optional)
 EXPOSE 5555 
 # +3000 # if/when we get a dashboard
 
 # Start the bot (replace 'yarn dev' with 'yarn start' if in production)
-CMD ["yarn", "dev"]
+CMD ["yarn", "start"]
