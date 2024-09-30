@@ -12,6 +12,8 @@ services:
       - /app/node_modules
     command: >
       /bin/sh -c "
+        prisma generate &&
+        yarn prisma migrate dev --name init
         prisma migrate deploy &&
         prisma db seed &&
         yarn start
