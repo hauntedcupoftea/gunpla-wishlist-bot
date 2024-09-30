@@ -14,6 +14,10 @@ COPY . .
 # Generate Prisma client
 RUN yarn prisma generate
 
+# Add node_modules/.bin to PATH
+ENV PATH /app/node_modules/.bin:$PATH
+
 EXPOSE 5555
 
-CMD ["yarn", "start"]
+# Use a shell to run the command
+CMD ["/bin/sh", "-c", "yarn start"]
