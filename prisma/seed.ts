@@ -1,60 +1,53 @@
-import process from "node:process";
-import { PrismaClient } from "@prisma/client";
-import path from "node:path";
-import { readFileSync } from "node:fs";
+import { prisma } from "../src/lib/prisma.ts";
 
-const prisma = new PrismaClient();
+interface ProductData {
+	release_date: string;
+	jpy_price: string;
+	availability: string;
+	stock_status: string;
+	product_name: string;
+}
+
+type ProductBatch = Record<string, ProductData>;
 
 async function main() {
-  const filePath = path.join(__dirname, "../data/hlj-products.json"); // Adjust the path accordingly
-  const fileData = readFileSync(filePath).toString();
+	const fileData = await Deno.readTextFile("./data/hlj-products.json");
+	const { products }: { products: ProductBatch[] } = JSON.parse(fileData);
 
-  const batches: Array<
-    Record<
-      string,
-      {
-        release_date: string;
-        jpy_price: string;
-        availability: string;
-        stock_status: string;
-        product_name: string;
-      }
-    >
-  > = JSON.parse(fileData).products;
+	let created = 0;
+	let skipped = 0;
 
-  for (const batch of batches) {
-    const productEntries = Object.entries(batch);
+	for (const batch of products) {
+		for (const [itemCode, product] of Object.entries(batch)) {
+			const existing = await prisma.kit.findUnique({
+				where: { item_code: itemCode },
+			});
 
-    for (const [itemCode, product] of productEntries) {
-      const existingProduct = await prisma.kit.findUnique({
-        where: { item_code: itemCode },
-      });
+			if (existing) {
+				skipped++;
+				continue;
+			}
 
-      if (!existingProduct) {
-        await prisma.kit.create({
-          data: {
-            item_code: itemCode,
-            release_date: product.release_date,
-            jpy_price: parseInt(product.jpy_price, 10),
-            availability: product.availability,
-            stock_status: product.stock_status,
-            product_name: product.product_name,
-          },
-        });
-      } else {
-        console.warn(
-          `[WARN] Skipped ${product.product_name} with item code ${itemCode} (already exists)`,
-        );
-      }
-    }
-  }
+			await prisma.kit.create({
+				data: {
+					item_code: itemCode,
+					release_date: product.release_date || null,
+					jpy_price: parseInt(product.jpy_price, 10),
+					availability: product.availability,
+					stock_status: product.stock_status || null,
+					product_name: product.product_name,
+				},
+			});
+			created++;
+		}
+	}
+
+	console.log(`Seed complete — created: ${created}, skipped: ${skipped}`);
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+	.catch((e) => {
+		console.error(e);
+		Deno.exit(1);
+	})
+	.finally(() => prisma.$disconnect());
