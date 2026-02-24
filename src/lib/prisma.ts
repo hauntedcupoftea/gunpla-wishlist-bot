@@ -1,7 +1,8 @@
 import { createClient } from "@libsql/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../../generated/client/index.js";
+import { PrismaClient } from "../../generated/client/client.ts";
+import "dotenv/config";
 
 const dbProvider = Deno.env.get("DB_PROVIDER") ?? "postgresql";
 const databaseUrl = Deno.env.get("DATABASE_URL");
