@@ -1,13 +1,14 @@
 {
   "name": "haro",
   "version": "1.0.0",
-  "description": "a discord bot for people to add wished gunpla to and then be pinged by users who want to know who wants that gunpla kit.",
-  "compilerOptions": {
-    "lib": ["deno.ns", "dom", "dom.iterable"]
-  },
+  "description": "a discord bot for people to add wished gunpla to...",
+  "exports": "./src/index.ts",
   "nodeModulesDir": "auto",
   "imports": {
     "@prisma/client": "npm:@prisma/client@^7.4.1",
+    "@prisma/config": "npm:@prisma/config@^7.4.1",
+    "@prisma/adapter-pg": "npm:@prisma/adapter-pg@^7.4.1",
+    "pg": "npm:pg@^8.11.0",
     "axios": "npm:axios@^1.13.5",
     "cli-progress": "npm:cli-progress@^3.12.0",
     "discord.js": "npm:discord.js@^14.25.1",
@@ -21,8 +22,8 @@
     "dev": "deno run --watch --env -A src/index.ts",
     "start": "deno run --env -A src/index.ts",
     "scrape": "deno run --env -A src/commands/util/scrape-hlj.ts",
-    "db:generate": "deno run -A npm:prisma generate",
-    "db:push": "deno run -A npm:prisma db push",
+    "db:generate": "deno run --env -A npm:prisma generate",
+    "db:push": "deno run --env -A npm:prisma db push",
     "db:seed": "deno run --env -A prisma/seed.ts"
   }
 }

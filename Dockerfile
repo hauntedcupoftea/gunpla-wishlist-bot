@@ -1,23 +1,31 @@
-FROM node:22-alpine
-
-RUN apk add --no-cache bash yarn
+FROM denoland/deno:alpine
 
 WORKDIR /app
 
-COPY package.json yarn.lock ./
+RUN chown -R deno:deno /app
 
-# Install all dependencies, including devDependencies
-RUN yarn install --frozen-lockfile
+# Switch to the non-root 'deno' user provided by the base image
+USER deno
 
-COPY . .
+# Copy the deno.json first to leverage Docker layer caching
+COPY --chown=deno:deno deno.json ./
 
-# Generate Prisma client
-RUN yarn prisma generate
+# Install dependencies globally into the Deno cache
+# (This prevents re-downloading npm packages every time you change your code)
+RUN deno install
 
-# Add node_modules/.bin to PATH
-ENV PATH /app/node_modules/.bin:$PATH
+# Copy the Prisma schema and generate the Prisma Client
+COPY --chown=deno:deno prisma ./prisma
+RUN deno task db:generate
 
+# Copy the rest of the application source code
+COPY --chown=deno:deno . .
+
+# Pre-compile the TypeScript into V8 bytecode
+RUN deno cache src/index.ts
+
+# Expose the port (Keep this if your bot runs a web server for healthchecks)
 EXPOSE 5555
 
-# Use a shell to run the command
-CMD ["/bin/sh", "-c", "yarn start"]
+# Start the bot using the standard Deno entrypoint
+CMD ["task", "start"]

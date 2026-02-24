@@ -1,7 +1,14 @@
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { Pool } from "pg";
 import { SlashCommandBuilder } from "discord.js";
 
-const prisma = new PrismaClient();
+const connectionString = Deno.env.get("DATABASE_URL");
+const pool = new Pool({ connectionString });
+
+const adapter = new PrismaPg(pool);
+
+export const prisma = new PrismaClient({ adapter });
 
 const data = new SlashCommandBuilder()
 	.setName("search")
