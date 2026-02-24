@@ -12,11 +12,10 @@ services:
       - /app/node_modules
     command: >
       /bin/sh -c "
-        prisma generate &&
-        yarn prisma migrate dev --name init
-        prisma migrate deploy &&
-        prisma db seed &&
-        yarn start
+        deno install --allow-scripts &&
+        deno task db:generate &&
+        deno run --env -A npm:prisma db push &&
+        deno task dev
       "
     networks:
       - gunpla-wishlist-bot
