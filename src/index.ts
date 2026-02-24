@@ -11,10 +11,11 @@ import {
 	Routes,
 } from "discord.js";
 import type { Command } from "./lib/command.ts";
+import { MessageFlags } from "discord.js";
 
 declare module "discord.js" {
 	interface Client {
-		commands: Collection<string, unknown>;
+		commands: Collection<string, Command>;
 	}
 }
 
@@ -62,9 +63,9 @@ const rest = new REST({ version: "10" }).setToken(token);
 (async () => {
 	try {
 		console.log("Started refreshing application (/) commands.");
-		let data: any;
+		let data: unknown;
+
 		if (guildId) {
-			// Guild-specific commands
 			data = await rest.put(Routes.applicationGuildCommands(appId, guildId), {
 				body: commands,
 			});
@@ -96,7 +97,7 @@ client.on("interactionCreate", async (interaction) => {
 			console.error(error);
 			await interaction.reply({
 				content: "There was an error while executing this command!",
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 		}
 	} else if (interaction.isAutocomplete()) {
@@ -104,7 +105,7 @@ client.on("interactionCreate", async (interaction) => {
 		if (!command) return;
 
 		try {
-			await command.autocomplete(interaction);
+			if (command.autocomplete) await command.autocomplete(interaction);
 		} catch (error) {
 			console.error(error);
 		}
