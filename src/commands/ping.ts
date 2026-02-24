@@ -1,19 +1,22 @@
 import { SlashCommandBuilder } from "discord.js";
+import type { Command } from "../lib/command.ts";
 
-module.exports = {
+export default {
 	data: new SlashCommandBuilder()
 		.setName("ping")
 		.setDescription("Replies with Pong and shows latency!"),
+
 	async execute(interaction) {
-		const sent = await interaction.reply({
+		const response = await interaction.reply({
 			content: "Pinging...",
-			fetchReply: true,
+			withResponse: true,
 		});
+		const message = response.resource?.message;
+		if (!message) return;
 		const roundTripLatency =
-			sent.createdTimestamp - interaction.createdTimestamp;
-		const apiLatency = interaction.client.ws.ping;
+			message.createdTimestamp - interaction.createdTimestamp;
 		await interaction.editReply(
-			`Pong! 🏓\nRound-trip latency: ${roundTripLatency}ms\nAPI Latency: ${apiLatency}ms`,
+			`Pong! 🏓\nRound-trip latency: ${roundTripLatency}ms\nAPI Latency: ${interaction.client.ws.ping}ms`,
 		);
 	},
-};
+} satisfies Command;
