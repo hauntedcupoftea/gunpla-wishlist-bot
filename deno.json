@@ -26,7 +26,7 @@
     "scrape": "deno run --env -A src/commands/util/scrape-hlj.ts",
     "db:generate": "deno run --env -A npm:prisma generate",
     "db:push": "deno run --env -A npm:prisma db push",
-    "db:seed": "deno run --env -A prisma/seed.ts",
+    "db:seed": "deno run --env -A ./prisma/seed.ts",
     "db:migrate:dev": "deno run --env -A npm:prisma migrate dev",
     "db:migrate:deploy": "deno run --env -A npm:prisma migrate deploy",
     "db:sync": "diff prisma/schema.sqlite.prisma prisma/schema.postgresql.prisma | grep -v '^[0-9]' | grep -v 'provider'"
