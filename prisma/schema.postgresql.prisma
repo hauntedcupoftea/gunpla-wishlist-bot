@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum GroupBuyStatus {
+  OPEN
+  LOCKED
+  PURCHASED
+  AT_WAREHOUSE
+  SHIPPED
+  AT_CUSTOMS
+  CLEARED_CUSTOMS
+  AT_RECEIVER
+  COMPLETED
+  CANCELLED
+}
+
+enum ClaimStatus {
+  PENDING
+  CONFIRMED
+  PAID
+  CANCELLED
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model Kit {
+  id           String  @id @default(uuid())
+  item_code    String  @unique
+  release_date String?
+  jpy_price    Int
+  weight_grams Int?
+  availability String
+  stock_status String?
+  product_name String
+
+  wishlists    Wishlist[]
+  groupBuyKits GroupBuyKit[]
+
+  @@index([product_name, item_code])
+}
+
+model Wishlist {
+  id        String   @id @default(uuid())
+  userId    String
+  note      String?
+  kitId     String
+  createdAt DateTime @default(now())
+
+  kit Kit @relation(fields: [kitId], references: [id])
+
+  @@unique([userId, kitId])
+  @@index([kitId])
+  @@index([userId])
+}
+
+model GroupBuy {
+  id         String         @id @default(uuid())
+  threadId   String         @unique // Discord forum thread ID — source of truth
+  guildId    String
+  ownerId    String         // organiser (creates + manages the group buy)
+  buyerId    String?        // handles payment aggregation and forwarding (can differ from owner)
+  receiverId String?        // receives the parcel (for verification/cross-reference)
+  status     GroupBuyStatus @default(OPEN)
+
+  // Financials — all in JPY unless noted
+  costPrice       Int?    // total paid to supplier for all kits
+  shippingCost    Int?    // total international shipping (split by weight proportion)
+  customsCost     Int?    // total customs/import duties (split by MSRP proportion)
+  totalWeight     Int?    // total parcel weight in grams
+  inrConversionRate Float? // JPY → INR rate used for this specific buy (varies by buyer/method)
+
+  // Tracking
+  shippingTrackingNumber String?
+  shippingTrackingUrl    String?
+  customsTrackingUrl     String? // Indian customs portal
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  kits   GroupBuyKit[]
+  claims GroupBuyClaim[]
+
+  @@index([ownerId])
+  @@index([buyerId])
+  @@index([guildId])
+}
+
+model GroupBuyKit {
+  id         String @id @default(uuid())
+  groupBuyId String
+  kitId      String
+
+  groupBuy GroupBuy @relation(fields: [groupBuyId], references: [id])
+  kit      Kit      @relation(fields: [kitId], references: [id])
+
+  claims GroupBuyClaim[]
+
+  @@unique([groupBuyId, kitId])
+  @@index([groupBuyId])
+  @@index([kitId])
+}
+
+model GroupBuyClaim {
+  id            String      @id @default(uuid())
+  groupBuyId    String
+  groupBuyKitId String
+  userId        String
+  status        ClaimStatus @default(PENDING)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Snapshotted at PURCHASED — all values in JPY
+  // INR equivalent = value * GroupBuy.inrConversionRate
+  calculatedKitCost      Int? // (kitMSRP / totalClaimedMSRP) * costPrice
+  calculatedShippingCost Int? // (kitWeight / totalWeight) * shippingCost
+  calculatedCustomsCost  Int? // (kitMSRP / totalClaimedMSRP) * customsCost
+
+  groupBuy    GroupBuy    @relation(fields: [groupBuyId], references: [id])
+  groupBuyKit GroupBuyKit @relation(fields: [groupBuyKitId], references: [id])
+
+  @@index([groupBuyId])
+  @@index([userId])
+  @@index([groupBuyKitId])
+}

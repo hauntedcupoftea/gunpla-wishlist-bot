@@ -5,6 +5,8 @@
   "exports": "./src/index.ts",
   "nodeModulesDir": "auto",
   "imports": {
+    "@libsql/client": "npm:@libsql/client@^0.17.0",
+    "@prisma/adapter-libsql": "npm:@prisma/adapter-libsql@^7.4.1",
     "@prisma/client": "npm:@prisma/client@^7.4.1",
     "@prisma/config": "npm:@prisma/config@^7.4.1",
     "@prisma/adapter-pg": "npm:@prisma/adapter-pg@^7.4.1",
@@ -24,6 +26,9 @@
     "scrape": "deno run --env -A src/commands/util/scrape-hlj.ts",
     "db:generate": "deno run --env -A npm:prisma generate",
     "db:push": "deno run --env -A npm:prisma db push",
-    "db:seed": "deno run --env -A prisma/seed.ts"
+    "db:seed": "deno run --env -A prisma/seed.ts",
+    "db:migrate:dev": "deno run --env -A npm:prisma migrate dev",
+    "db:migrate:deploy": "deno run --env -A npm:prisma migrate deploy",
+    "db:sync": "diff prisma/schema.sqlite.prisma prisma/schema.postgresql.prisma | grep -v '^[0-9]' | grep -v 'provider'"
   }
 }

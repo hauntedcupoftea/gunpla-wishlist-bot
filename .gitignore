@@ -1,2 +1,38 @@
-node_modules
+# Environment
 .env
+.env.*
+!.env.example
+
+# Deno
+.deno/
+
+# Node / npm compat layer (Deno uses this internally)
+node_modules/
+
+# Prisma
+generated/
+prisma/migrations/dev.db
+prisma/migrations/dev.db-journal
+
+# SQLite (local dev)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Scraped data (regenerate with deno task scrape)
+data/
+
+# Build artifacts
+dist/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# direnv
+.direnv/
+data
