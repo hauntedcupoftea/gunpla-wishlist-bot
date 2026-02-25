@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/dotenv@~0.225.6": "0.225.6",
     "npm:@libsql/client@0.17": "0.17.0",
     "npm:@prisma/adapter-libsql@^7.4.1": "7.4.1",
     "npm:@prisma/adapter-pg@^7.4.1": "7.4.1",
@@ -16,6 +17,11 @@
     "npm:pg@^8.11.0": "8.18.0",
     "npm:prisma@*": "7.4.1",
     "npm:prisma@^7.4.1": "7.4.1"
+  },
+  "jsr": {
+    "@std/dotenv@0.225.6": {
+      "integrity": "1d6f9db72f565bd26790fa034c26e45ecb260b5245417be76c2279e5734c421b"
+    }
   },
   "npm": {
     "@chevrotain/cst-dts-gen@10.5.0": {
@@ -1100,6 +1106,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/dotenv@~0.225.6",
       "npm:@libsql/client@0.17",
       "npm:@prisma/adapter-libsql@^7.4.1",
       "npm:@prisma/adapter-pg@^7.4.1",

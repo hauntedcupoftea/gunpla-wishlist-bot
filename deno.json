@@ -10,6 +10,7 @@
     "@prisma/client": "npm:@prisma/client@^7.4.1",
     "@prisma/config": "npm:@prisma/config@^7.4.1",
     "@prisma/adapter-pg": "npm:@prisma/adapter-pg@^7.4.1",
+    "@std/dotenv": "jsr:@std/dotenv@^0.225.6",
     "pg": "npm:pg@^8.11.0",
     "axios": "npm:axios@^1.13.5",
     "cli-progress": "npm:cli-progress@^3.12.0",
