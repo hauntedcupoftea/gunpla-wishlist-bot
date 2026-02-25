@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client"
-  output   = "../generated/client"
+  output   = "../generated/"
 }
 
 datasource db {
@@ -11,6 +11,7 @@ datasource db {
 
 enum GroupBuyStatus {
   OPEN
+  CLAIMED
   LOCKED
   PURCHASED
   AT_WAREHOUSE
@@ -36,7 +37,7 @@ model Kit {
   item_code    String  @unique
   release_date String?
   jpy_price    Int
-  weight_grams Int
+  weight_grams Int?
   availability String
   stock_status String?
   product_name String
@@ -95,9 +96,10 @@ model GroupBuy {
 }
 
 model GroupBuyKit {
-  id         String @id @default(uuid())
-  groupBuyId String
-  kitId      String
+  id           String @id @default(uuid())
+  groupBuyId   String
+  kitId        String
+  weight_grams Int?
 
   groupBuy GroupBuy @relation(fields: [groupBuyId], references: [id])
   kit      Kit      @relation(fields: [kitId], references: [id])
