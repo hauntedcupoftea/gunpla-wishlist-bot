@@ -1,18 +1,23 @@
-import { createClient } from "@libsql/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../../generated/client/client.ts";
-import "dotenv/config";
+import { PrismaClient } from "../../generated/client.ts";
+import { env } from "./env.ts";
 
-const dbProvider = Deno.env.get("DB_PROVIDER") ?? "postgresql";
-const databaseUrl = Deno.env.get("DATABASE_URL");
+const dbProvider = env.DB_PROVIDER;
+const databaseUrl = env.DATABASE_URL;
+
+if (!databaseUrl) {
+	throw new Error(
+		"DATABASE_URL is not set. Make sure your .env file exists and contains DATABASE_URL.",
+	);
+}
 
 function createPrismaClient(): PrismaClient {
 	if (dbProvider === "sqlite") {
-		const client = createClient({ url: databaseUrl });
-		const adapter = new PrismaLibSql(client);
+		const adapter = new PrismaLibSql({ url: databaseUrl });
 		return new PrismaClient({ adapter });
 	}
+
 	const adapter = new PrismaPg({ connectionString: databaseUrl });
 	return new PrismaClient({ adapter });
 }
