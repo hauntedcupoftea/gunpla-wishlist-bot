@@ -99,14 +99,15 @@ model GroupBuyKit {
   id           String @id @default(uuid())
   groupBuyId   String
   kitId        String
-  weight_grams Int?
+  weight_grams Int
+  slotNumber   Int
 
   groupBuy GroupBuy @relation(fields: [groupBuyId], references: [id])
   kit      Kit      @relation(fields: [kitId], references: [id])
 
   claims GroupBuyClaim[]
 
-  @@unique([groupBuyId, kitId])
+  @@index([groupBuyId, kitId])
   @@index([groupBuyId])
   @@index([kitId])
 }
