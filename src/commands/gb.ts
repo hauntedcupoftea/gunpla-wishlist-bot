@@ -17,7 +17,7 @@ import type {
 } from "../../generated/client.ts";
 import type { Command } from "../lib/command.ts";
 import { prisma } from "../lib/prisma.ts";
-import { icontains } from "../lib/util.ts";
+import { kitNameFilter } from "../lib/util.ts";
 
 type GbWithKits = GroupBuy & { kits: (GroupBuyKit & { kit: Kit })[] };
 
@@ -230,6 +230,23 @@ export default {
 						.setDescription("Kit to add")
 						.setRequired(true)
 						.setAutocomplete(true),
+				)
+				.addIntegerOption((o) =>
+					o
+						.setName("weight_grams")
+						.setDescription(
+							"Weight of one unit in grams (used for shipping split)",
+						)
+						.setRequired(true)
+						.setMinValue(1),
+				)
+				.addIntegerOption((o) =>
+					o
+						.setName("quantity")
+						.setDescription("Number of slots to add (default: 1)")
+						.setRequired(false)
+						.setMinValue(1)
+						.setMaxValue(20),
 				),
 		)
 		.addSubcommand((sub) =>
@@ -242,6 +259,14 @@ export default {
 						.setDescription("Kit to remove")
 						.setRequired(true)
 						.setAutocomplete(true),
+				)
+				.addIntegerOption((o) =>
+					o
+						.setName("quantity")
+						.setDescription("Number of slots to remove (default: 1)")
+						.setRequired(false)
+						.setMinValue(1)
+						.setMaxValue(20),
 				),
 		)
 		.addSubcommand((sub) =>
@@ -377,6 +402,13 @@ export default {
 						.setAutocomplete(true),
 				),
 		)
+		.addSubcommand((sub) =>
+			sub
+				.setName("summary")
+				.setDescription(
+					"Post a public breakdown of what each member owes (organiser/buyer only)",
+				),
+		)
 		.addSubcommandGroup((group) =>
 			group
 				.setName("claims")
@@ -440,11 +472,12 @@ export default {
 			const excludedIds = existing.map((e) => e.kitId);
 			const results = await prisma.kit.findMany({
 				where: {
-					product_name: icontains(focused),
+					...kitNameFilter(focused),
 					id: { notIn: excludedIds },
 				},
 				take: 5,
 			});
+			console.info(results);
 			await interaction.respond(
 				results.map((k) => ({ name: k.product_name, value: k.id })),
 			);
@@ -455,7 +488,7 @@ export default {
 			const results = await prisma.groupBuyKit.findMany({
 				where: {
 					groupBuy: { threadId: interaction.channelId },
-					kit: { product_name: icontains(focused) },
+					kit: { ...kitNameFilter(focused) },
 				},
 				include: { kit: true },
 				take: 5,
@@ -467,28 +500,53 @@ export default {
 		}
 
 		if (subcommand === "claim") {
-			// Exclude kits the user already has an active claim for
+			// Find kits the user already has an active claim for (exclude entire kit)
 			const alreadyClaimed = await prisma.groupBuyClaim.findMany({
 				where: {
 					groupBuy: { threadId: interaction.channelId },
 					userId: interaction.user.id,
 					status: { not: "CANCELLED" },
 				},
-				select: { groupBuyKitId: true },
+				include: { groupBuyKit: { select: { kitId: true } } },
 			});
-			const excludedGbkIds = alreadyClaimed.map((c) => c.groupBuyKitId);
-			const results = await prisma.groupBuyKit.findMany({
+			const excludedKitIds = alreadyClaimed.map((c) => c.groupBuyKit.kitId);
+
+			// Load all slots for matching kits, aggregate by kitId
+			const slots = await prisma.groupBuyKit.findMany({
 				where: {
 					groupBuy: { threadId: interaction.channelId },
-					kit: { product_name: icontains(focused) },
-					id: { notIn: excludedGbkIds },
+					kit: { ...kitNameFilter(focused) },
+					kitId: { notIn: excludedKitIds },
 				},
-				include: { kit: true },
-				take: 5,
+				include: {
+					kit: true,
+					claims: { where: { status: { not: "CANCELLED" } } },
+				},
 			});
-			await interaction.respond(
-				results.map((gbk) => ({ name: gbk.kit.product_name, value: gbk.id })),
-			);
+
+			const byKit = new Map<
+				string,
+				{ name: string; total: number; pending: number }
+			>();
+			for (const slot of slots) {
+				const entry = byKit.get(slot.kitId) ?? {
+					name: slot.kit.product_name,
+					total: 0,
+					pending: 0,
+				};
+				entry.total++;
+				entry.pending += slot.claims.length;
+				byKit.set(slot.kitId, entry);
+			}
+
+			const options = [...byKit.entries()]
+				.slice(0, 5)
+				.map(([kitId, { name, total, pending }]) => ({
+					name: `${name} (${pending} pending / ${total} slot${total !== 1 ? "s" : ""})`,
+					value: kitId,
+				}));
+
+			await interaction.respond(options);
 			return;
 		}
 
@@ -498,7 +556,7 @@ export default {
 					groupBuy: { threadId: interaction.channelId },
 					userId: interaction.user.id,
 					status: { not: "CANCELLED" },
-					groupBuyKit: { kit: { product_name: icontains(focused) } },
+					groupBuyKit: { kit: { ...kitNameFilter(focused) } },
 				},
 				include: { groupBuyKit: { include: { kit: true } } },
 				take: 5,
@@ -517,7 +575,7 @@ export default {
 				where: {
 					groupBuy: { threadId: interaction.channelId },
 					status: { not: "CANCELLED" },
-					groupBuyKit: { kit: { product_name: icontains(focused) } },
+					groupBuyKit: { kit: { ...kitNameFilter(focused) } },
 				},
 				include: { groupBuyKit: { include: { kit: true } } },
 				take: 5,
@@ -589,6 +647,8 @@ export default {
 				return;
 			}
 			const kitId = interaction.options.getString("kit", true);
+			const weightGrams = interaction.options.getInteger("weight_grams", true);
+			const quantity = interaction.options.getInteger("quantity") ?? 1;
 			const kit = await prisma.kit.findUnique({ where: { id: kitId } });
 			if (!kit) {
 				await interaction.reply({
@@ -597,24 +657,33 @@ export default {
 				});
 				return;
 			}
-			await prisma.groupBuyKit.create({
-				data: { groupBuyId: gb.id, kitId: kit.id },
+			// Find highest existing slot number for this kit in this GB
+			const existingSlots = await prisma.groupBuyKit.findMany({
+				where: { groupBuyId: gb.id, kitId: kit.id },
+				orderBy: { slotNumber: "desc" },
+				take: 1,
 			});
-			const allKits = await prisma.groupBuyKit.findMany({
+			const nextSlot = (existingSlots[0]?.slotNumber ?? 0) + 1;
+
+			await prisma.groupBuyKit.createMany({
+				data: Array.from({ length: quantity }, (_, i) => ({
+					groupBuyId: gb.id,
+					kitId: kit.id,
+					weight_grams: weightGrams,
+					slotNumber: nextSlot + i,
+				})),
+			});
+			const allSlots = await prisma.groupBuyKit.findMany({
 				where: { groupBuyId: gb.id },
-				include: { kit: true },
 			});
-			const totalWeight = allKits.reduce(
-				(sum, k) => sum + (k.kit.weight_grams ?? 0),
-				0,
-			);
+			const totalWeight = allSlots.reduce((sum, s) => sum + s.weight_grams, 0);
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
 				data: { totalWeight },
 			});
 			await interaction.reply(
 				withOverrideNote(
-					`Added **${kit.product_name}** to the group buy. Total kit weight: ${totalWeight}g.`,
+					`Added **${quantity}x ${kit.product_name}** (${weightGrams}g each) to the group buy. Total weight: ${totalWeight}g.`,
 					adminOverride,
 				),
 			);
@@ -634,36 +703,48 @@ export default {
 				});
 				return;
 			}
-			const gbkId = interaction.options.getString("kit", true);
-			const claimCount = await prisma.groupBuyClaim.count({
-				where: { groupBuyKitId: gbkId, status: { not: "CANCELLED" } },
+			const kitId = interaction.options.getString("kit", true);
+			const quantity = interaction.options.getInteger("quantity") ?? 1;
+
+			// Find unclaimed slots for this kit in this GB
+			const unclaimedSlots = await prisma.groupBuyKit.findMany({
+				where: {
+					groupBuyId: gb.id,
+					kitId,
+					claims: { none: { status: { not: "CANCELLED" } } },
+				},
+				include: { kit: true },
+				take: quantity,
 			});
-			if (claimCount > 0) {
+
+			if (unclaimedSlots.length < quantity) {
+				const totalSlots = await prisma.groupBuyKit.count({
+					where: { groupBuyId: gb.id, kitId },
+				});
 				await interaction.reply({
-					content: `Cannot remove this kit — it has ${claimCount} active claim${claimCount !== 1 ? "s" : ""}. Cancel the claims first.`,
+					content: `Not enough unclaimed slots — only ${unclaimedSlots.length} of ${totalSlots} slot${totalSlots !== 1 ? "s" : ""} are unclaimed.`,
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-			const gbk = await prisma.groupBuyKit.delete({
-				where: { id: gbkId },
-				include: { kit: true },
+
+			const kitName = unclaimedSlots[0].kit.product_name;
+			await prisma.groupBuyKit.deleteMany({
+				where: { id: { in: unclaimedSlots.map((s) => s.id) } },
 			});
-			const allKits = await prisma.groupBuyKit.findMany({
+
+			const allSlots = await prisma.groupBuyKit.findMany({
 				where: { groupBuyId: gb.id },
-				include: { kit: true },
 			});
-			const totalWeight = allKits.reduce(
-				(sum, k) => sum + (k.kit.weight_grams ?? 0),
-				0,
-			);
+			const totalWeight = allSlots.reduce((sum, s) => sum + s.weight_grams, 0);
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
 				data: { totalWeight },
 			});
+
 			await interaction.reply(
 				withOverrideNote(
-					`Removed **${gbk.kit.product_name}** from the group buy. Total kit weight: ${totalWeight}g.`,
+					`Removed **${quantity}x ${kitName}** from the group buy. Total weight: ${totalWeight}g.`,
 					adminOverride,
 				),
 			);
@@ -890,7 +971,7 @@ export default {
 				activeClaims.map((claim) => {
 					const proportion =
 						shippingWeight > 0
-							? (claim.groupBuyKit.kit.weight_grams ?? 0) / shippingWeight // TODO: change to better default?
+							? claim.groupBuyKit.weight_grams / shippingWeight
 							: 0;
 					return prisma.groupBuyClaim.update({
 						where: { id: claim.id },
@@ -959,6 +1040,114 @@ export default {
 			return;
 		}
 
+		// ── /gb summary ──────────────────────────────────────────────────────
+		if (subcommand === "summary") {
+			const gb = await getGbForThread(interaction);
+			if (!gb) return;
+			if (await isLocked(interaction, gb)) return;
+
+			const { allowed } = checkOwnerOrBuyer(interaction, gb);
+			if (!allowed) {
+				await interaction.reply({
+					content: "Only the organiser or buyer can post the payment summary.",
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			const confirmedClaims = await prisma.groupBuyClaim.findMany({
+				where: { groupBuyId: gb.id, status: "CONFIRMED" },
+				include: { groupBuyKit: { include: { kit: true } } },
+				orderBy: { userId: "asc" },
+			});
+
+			if (confirmedClaims.length === 0) {
+				await interaction.reply({
+					content:
+						"No confirmed claims yet. Resolve conflicts with `/gb claims manage` first.",
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			// Group by userId
+			const byUser = new Map<string, typeof confirmedClaims>();
+			for (const claim of confirmedClaims) {
+				const existing = byUser.get(claim.userId) ?? [];
+				existing.push(claim);
+				byUser.set(claim.userId, existing);
+			}
+
+			const hasKit = confirmedClaims.some((c) => c.calculatedKitCost !== null);
+			const hasShipping = confirmedClaims.some(
+				(c) => c.calculatedShippingCost !== null,
+			);
+			const hasCustoms = confirmedClaims.some(
+				(c) => c.calculatedCustomsCost !== null,
+			);
+
+			const userLines = [...byUser.entries()].map(([userId, claims]) => {
+				const kitTotal = claims.reduce(
+					(sum, c) => sum + (c.calculatedKitCost ?? 0),
+					0,
+				);
+				const shippingTotal = claims.reduce(
+					(sum, c) => sum + (c.calculatedShippingCost ?? 0),
+					0,
+				);
+				const customsTotal = claims.reduce(
+					(sum, c) => sum + (c.calculatedCustomsCost ?? 0),
+					0,
+				);
+				const grandTotal = kitTotal + shippingTotal + customsTotal;
+				const grandInr =
+					gb.inrConversionRate && grandTotal > 0
+						? ` **(₹${Math.round(grandTotal * gb.inrConversionRate).toLocaleString()})**`
+						: "";
+
+				// Per-kit lines — show slot number only when kit has multiple slots
+				const kitLines = claims
+					.map((c) => {
+						const slotsForKit = confirmedClaims.filter(
+							(x) => x.groupBuyKit.kitId === c.groupBuyKit.kitId,
+						);
+						const slotLabel =
+							slotsForKit.length > 1
+								? `${c.groupBuyKit.kit.product_name} #${c.groupBuyKit.slotNumber}`
+								: c.groupBuyKit.kit.product_name;
+						return `  - ${slotLabel}`;
+					})
+					.join("\n");
+
+				// Cost breakdown
+				const costParts: string[] = [];
+				if (hasKit) costParts.push(`Kit ¥${kitTotal.toLocaleString()}`);
+				if (hasShipping)
+					costParts.push(`Shipping ¥${shippingTotal.toLocaleString()}`);
+				if (hasCustoms)
+					costParts.push(`Customs ¥${customsTotal.toLocaleString()}`);
+
+				const costLine =
+					costParts.length > 0
+						? `  **Total: ¥${grandTotal.toLocaleString()}**${grandInr}` +
+							(costParts.length > 1 ? ` (${costParts.join(" + ")})` : "")
+						: "  _Costs not yet set_";
+
+				return `<@${userId}>\n${kitLines}\n${costLine}`;
+			});
+
+			const header = [
+				`## Payment Summary`,
+				gb.inrConversionRate ? `Rate: ¥1 = ₹${gb.inrConversionRate}` : null,
+				"",
+			]
+				.filter((l) => l !== null)
+				.join("\n");
+
+			await interaction.reply({ content: header + userLines.join("\n\n") });
+			return;
+		}
+
 		// ── /gb claim ─────────────────────────────────────────────────────────
 		if (subcommand === "claim") {
 			const gb = await getGbForThread(interaction);
@@ -973,14 +1162,15 @@ export default {
 				return;
 			}
 
-			const gbkId = interaction.options.getString("kit", true);
+			const kitId = interaction.options.getString("kit", true);
 
-			// Duplicate claim protection
+			// Duplicate claim protection — one claim per user per kit across all slots
 			const existing = await prisma.groupBuyClaim.findFirst({
 				where: {
-					groupBuyKitId: gbkId,
+					groupBuyId: gb.id,
 					userId: interaction.user.id,
 					status: { not: "CANCELLED" },
+					groupBuyKit: { kitId },
 				},
 			});
 			if (existing) {
@@ -991,11 +1181,17 @@ export default {
 				return;
 			}
 
-			const gbk = await prisma.groupBuyKit.findUnique({
-				where: { id: gbkId },
-				include: { kit: true },
+			// Load all slots for this kit, with their active claim counts
+			const slots = await prisma.groupBuyKit.findMany({
+				where: { groupBuyId: gb.id, kitId },
+				include: {
+					kit: true,
+					claims: { where: { status: { not: "CANCELLED" } } },
+				},
+				orderBy: { slotNumber: "asc" },
 			});
-			if (!gbk) {
+
+			if (slots.length === 0) {
 				await interaction.reply({
 					content: "Kit not found in this group buy.",
 					flags: MessageFlags.Ephemeral,
@@ -1003,19 +1199,26 @@ export default {
 				return;
 			}
 
+			// Assign to the slot with the fewest pending claims (ties broken by slotNumber)
+			const bestSlot = slots.reduce((best, slot) =>
+				slot.claims.length < best.claims.length ? slot : best,
+			);
+
 			const claim = await prisma.groupBuyClaim.create({
 				data: {
 					groupBuyId: gb.id,
-					groupBuyKitId: gbk.id,
+					groupBuyKitId: bestSlot.id,
 					userId: interaction.user.id,
 				},
 			});
 
 			// Auto-snapshot if financials already set
-			await snapshotKitCost(claim.id, gbk.kit.jpy_price, gb);
+			await snapshotKitCost(claim.id, bestSlot.kit.jpy_price, gb);
 
+			const slotLabel =
+				slots.length > 1 ? ` (slot #${bestSlot.slotNumber})` : "";
 			await interaction.reply({
-				content: `Claimed **${gbk.kit.product_name}**! The organiser will confirm your claim.`,
+				content: `Claimed **${bestSlot.kit.product_name}**${slotLabel}! The organiser will confirm your claim.`,
 				flags: MessageFlags.Ephemeral,
 			});
 			return;
@@ -1059,10 +1262,14 @@ export default {
 					const lines = gbWithClaims.kits
 						.filter((k) => k.claims.length > 0)
 						.map((k) => {
+							const slotLabel =
+								gbWithClaims.kits.filter((s) => s.kitId === k.kitId).length > 1
+									? `**${k.kit.product_name} #${k.slotNumber}**`
+									: `**${k.kit.product_name}**`;
 							const claimLines = k.claims
 								.map((c) => `  - <@${c.userId}> [${c.status}]`)
 								.join("\n");
-							return `**${k.kit.product_name}** (${k.claims.length})\n${claimLines}`;
+							return `${slotLabel} (${k.claims.length})\n${claimLines}`;
 						})
 						.join("\n\n");
 
@@ -1134,6 +1341,7 @@ export default {
 						kit: true,
 						claims: { where: { status: { not: "CANCELLED" } } },
 					},
+					orderBy: [{ kitId: "asc" }, { slotNumber: "asc" }],
 				});
 
 				const contested = kitsWithClaims.filter((k) => k.claims.length > 1);
@@ -1144,7 +1352,7 @@ export default {
 					const parts: string[] = [];
 					if (resolved.length > 0) {
 						parts.push(
-							`✅ Resolved:\n${resolved.map((k) => `  - **${k.kit.product_name}** → <@${k.claims[0].userId}>`).join("\n")}`,
+							`✅ Resolved:\n${resolved.map((k) => `  - **${k.kit.product_name} #${k.slotNumber}** → <@${k.claims[0].userId}>`).join("\n")}`,
 						);
 					}
 					if (unclaimed.length > 0) {
@@ -1169,13 +1377,14 @@ export default {
 				// Up to 5 select menus (Discord component limit)
 				const shown = contested.slice(0, 5);
 				const rows = shown.map((gbk) => {
+					const slotLabel = `${gbk.kit.product_name} #${gbk.slotNumber}`;
 					const select = new StringSelectMenuBuilder()
 						.setCustomId(`claims:confirm:${gbk.id}`)
-						.setPlaceholder(`${gbk.kit.product_name} — pick one claimer`)
+						.setPlaceholder(`${slotLabel} — pick one claimer`)
 						.addOptions(
 							gbk.claims.map((c) => ({
-								label: `User ${c.userId.slice(-6)}`,
-								description: `<@${c.userId}>`,
+								label: `<@${c.userId}>`,
+								description: `Confirm for ${slotLabel}, cancel all others`,
 								value: c.id,
 							})),
 						);
@@ -1188,12 +1397,12 @@ export default {
 					.setTitle("Claim conflicts")
 					.setColor(0xe67e22)
 					.setDescription(
-						`${contested.length} kit${contested.length !== 1 ? "s have" : " has"} multiple claimers. ` +
-							`Select one winner per kit — all others will be cancelled.\n\n` +
+						`${contested.length} slot${contested.length !== 1 ? "s have" : " has"} multiple claimers. ` +
+							`Select one winner per slot — all others will be cancelled.\n\n` +
 							contested
 								.map(
 									(k) =>
-										`**${k.kit.product_name}** — ${k.claims.length} claimers: ${k.claims.map((c) => `<@${c.userId}>`).join(", ")}`,
+										`**${k.kit.product_name} #${k.slotNumber}** — ${k.claims.length} claimers: ${k.claims.map((c) => `<@${c.userId}>`).join(", ")}`,
 								)
 								.join("\n"),
 					);

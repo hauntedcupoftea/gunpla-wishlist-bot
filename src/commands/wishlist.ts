@@ -1,6 +1,7 @@
 import { MessageFlags, SlashCommandBuilder } from "discord.js";
 import type { Command } from "../lib/command.ts";
 import { prisma } from "../lib/prisma.ts";
+import { kitNameFilter } from "../lib/util.ts";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -46,7 +47,7 @@ export default {
 		if (subcommand === "add") {
 			const results = await prisma.kit.findMany({
 				where: {
-					product_name: { contains: focused, mode: "insensitive" },
+					...kitNameFilter(focused),
 				},
 				take: 5,
 			});
@@ -54,12 +55,11 @@ export default {
 				results.map((k) => ({ name: k.product_name, value: k.id })),
 			);
 		} else if (subcommand === "remove") {
-			// Only show kits the user actually has wishlisted
 			const results = await prisma.wishlist.findMany({
 				where: {
 					userId: interaction.user.id,
 					kit: {
-						product_name: { contains: focused, mode: "insensitive" },
+						...kitNameFilter(focused),
 					},
 				},
 				include: { kit: true },

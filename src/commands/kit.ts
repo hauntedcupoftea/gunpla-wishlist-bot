@@ -1,7 +1,7 @@
 import { EmbedBuilder, MessageFlags, SlashCommandBuilder } from "discord.js";
 import type { Command } from "../lib/command.ts";
 import { prisma } from "../lib/prisma.ts";
-import { icontains } from "../lib/util.ts";
+import { kitNameFilter } from "../lib/util.ts";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -21,6 +21,14 @@ export default {
 					o
 						.setName("jpy_price")
 						.setDescription("Price in JPY (use MSRP where possible)")
+						.setRequired(true),
+				)
+				.addIntegerOption((o) =>
+					o
+						.setName("weight_grams")
+						.setDescription(
+							"Kit weight in grams (used for shipping cost split)",
+						)
 						.setRequired(true),
 				)
 				.addStringOption((o) =>
@@ -48,14 +56,6 @@ export default {
 						.setName("stock_status")
 						.setDescription("Stock status")
 						.setRequired(false),
-				)
-				.addIntegerOption((o) =>
-					o
-						.setName("weight_grams")
-						.setDescription(
-							"Kit weight in grams (used for shipping cost split)",
-						)
-						.setRequired(true),
 				),
 		)
 		.addSubcommand((sub) =>
@@ -95,7 +95,7 @@ export default {
 
 		const results = await prisma.kit.findMany({
 			where: {
-				product_name: icontains(focused),
+				...kitNameFilter(focused),
 			},
 			take: 5,
 		});
