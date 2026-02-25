@@ -1,16 +1,75 @@
 import {
+	ActionRowBuilder,
 	type ChatInputCommandInteraction,
+	ComponentType,
 	EmbedBuilder,
 	MessageFlags,
+	PermissionFlagsBits,
 	SlashCommandBuilder,
+	StringSelectMenuBuilder,
+	type StringSelectMenuInteraction,
 } from "discord.js";
 import type {
 	GroupBuy,
 	GroupBuyKit,
+	GroupBuyStatus,
 	Kit,
-} from "../../generated/client/client.ts";
+} from "../../generated/client.ts";
 import type { Command } from "../lib/command.ts";
 import { prisma } from "../lib/prisma.ts";
+import { icontains } from "../lib/util.ts";
+
+type GbWithKits = GroupBuy & { kits: (GroupBuyKit & { kit: Kit })[] };
+
+function isAdmin(interaction: ChatInputCommandInteraction): boolean {
+	return !!interaction.memberPermissions?.has(
+		PermissionFlagsBits.Administrator,
+	);
+}
+
+function checkOwner(
+	interaction: ChatInputCommandInteraction,
+	gb: GroupBuy,
+): { allowed: boolean; adminOverride: boolean } {
+	if (gb.ownerId === interaction.user.id)
+		return { allowed: true, adminOverride: false };
+	if (isAdmin(interaction)) return { allowed: true, adminOverride: true };
+	return { allowed: false, adminOverride: false };
+}
+
+function checkOwnerOrBuyer(
+	interaction: ChatInputCommandInteraction,
+	gb: GroupBuy,
+): { allowed: boolean; adminOverride: boolean } {
+	if (
+		gb.ownerId === interaction.user.id ||
+		gb.buyerId === interaction.user.id
+	) {
+		return { allowed: true, adminOverride: false };
+	}
+	if (isAdmin(interaction)) return { allowed: true, adminOverride: true };
+	return { allowed: false, adminOverride: false };
+}
+
+function withOverrideNote(content: string, adminOverride: boolean): string {
+	return adminOverride ? `${content}\n-# ⚠️ Admin override used.` : content;
+}
+
+async function isLocked(
+	interaction: ChatInputCommandInteraction,
+	gb: GroupBuy,
+): Promise<boolean> {
+	if (gb.status !== "LOCKED") return false;
+	if (isAdmin(interaction)) return false;
+	await interaction.reply({
+		content:
+			"This group buy is locked by an administrator. No actions can be taken.",
+		flags: MessageFlags.Ephemeral,
+	});
+	return true;
+}
+
+// ─── GB lookup ────────────────────────────────────────────────────────────────
 
 async function getGbForThread(interaction: ChatInputCommandInteraction) {
 	const gb = await prisma.groupBuy.findUnique({
@@ -33,11 +92,47 @@ async function getGbForThread(interaction: ChatInputCommandInteraction) {
 	return gb;
 }
 
-type GbWithKits = GroupBuy & { kits: (GroupBuyKit & { kit: Kit })[] };
+// ─── Cost snapshot ────────────────────────────────────────────────────────────
+
+/**
+ * Snapshots kit (and customs if set) costs onto a single claim using current GB financials.
+ * Safe to call on a newly created claim — no-ops if costPrice isn't set yet.
+ */
+async function snapshotKitCost(
+	claimId: string,
+	kitJpyPrice: number,
+	gb: GroupBuy,
+) {
+	if (!gb.costPrice) return;
+
+	const activeClaims = await prisma.groupBuyClaim.findMany({
+		where: { groupBuyId: gb.id, status: { not: "CANCELLED" } },
+		include: { groupBuyKit: { include: { kit: true } } },
+	});
+
+	const totalMsrp = activeClaims.reduce(
+		(sum, c) => sum + c.groupBuyKit.kit.jpy_price,
+		0,
+	);
+	if (totalMsrp === 0) return;
+
+	const proportion = kitJpyPrice / totalMsrp;
+	const data: { calculatedKitCost: number; calculatedCustomsCost?: number } = {
+		calculatedKitCost: Math.round(proportion * gb.costPrice),
+	};
+	if (gb.customsCost !== null) {
+		data.calculatedCustomsCost = Math.round(proportion * gb.customsCost);
+	}
+
+	await prisma.groupBuyClaim.update({ where: { id: claimId }, data });
+}
+
+// ─── Embed builder ────────────────────────────────────────────────────────────
 
 function buildGbEmbed(gb: GbWithKits): EmbedBuilder {
 	const statusEmoji: Record<string, string> = {
 		OPEN: "🟢",
+		CLAIMED: "✅",
 		LOCKED: "🔒",
 		PURCHASED: "🛒",
 		AT_WAREHOUSE: "🏭",
@@ -82,7 +177,6 @@ function buildGbEmbed(gb: GbWithKits): EmbedBuilder {
 			{ name: `Kits (${gb.kits.length})`, value: kitLines },
 		);
 
-	// Financials — only show once data exists
 	const financialLines: string[] = [];
 	if (gb.costPrice)
 		financialLines.push(`Kit cost: ¥${gb.costPrice.toLocaleString()}`);
@@ -92,24 +186,20 @@ function buildGbEmbed(gb: GbWithKits): EmbedBuilder {
 		financialLines.push(`Customs: ¥${gb.customsCost.toLocaleString()}`);
 	if (gb.inrConversionRate)
 		financialLines.push(`Rate: ¥1 = ₹${gb.inrConversionRate}`);
-
 	if (financialLines.length > 0) {
 		embed.addFields({ name: "Financials", value: financialLines.join("\n") });
 	}
 
-	// Tracking
 	const trackingLines: string[] = [];
 	if (gb.shippingTrackingUrl)
 		trackingLines.push(`[Shipping tracking](${gb.shippingTrackingUrl})`);
 	if (gb.customsTrackingUrl)
 		trackingLines.push(`[Customs tracking](${gb.customsTrackingUrl})`);
-
 	if (trackingLines.length > 0) {
 		embed.addFields({ name: "Tracking", value: trackingLines.join("\n") });
 	}
 
 	embed.setFooter({ text: `GB ID: ${gb.id}` }).setTimestamp();
-
 	return embed;
 }
 
@@ -120,21 +210,16 @@ export default {
 		.setName("gb")
 		.setDescription("Group buy commands")
 
-		// /gb create
 		.addSubcommand((sub) =>
 			sub
 				.setName("create")
 				.setDescription("Create a group buy in this forum thread"),
 		)
-
-		// /gb info
 		.addSubcommand((sub) =>
 			sub
 				.setName("info")
 				.setDescription("View the group buy summary for this thread"),
 		)
-
-		// /gb addkit
 		.addSubcommand((sub) =>
 			sub
 				.setName("addkit")
@@ -147,8 +232,6 @@ export default {
 						.setAutocomplete(true),
 				),
 		)
-
-		// /gb removekit
 		.addSubcommand((sub) =>
 			sub
 				.setName("removekit")
@@ -161,8 +244,6 @@ export default {
 						.setAutocomplete(true),
 				),
 		)
-
-		// /gb setbuyer
 		.addSubcommand((sub) =>
 			sub
 				.setName("setbuyer")
@@ -173,8 +254,6 @@ export default {
 					o.setName("user").setDescription("The buyer").setRequired(true),
 				),
 		)
-
-		// /gb setreceiver
 		.addSubcommand((sub) =>
 			sub
 				.setName("setreceiver")
@@ -185,8 +264,6 @@ export default {
 					o.setName("user").setDescription("The receiver").setRequired(true),
 				),
 		)
-
-		// /gb transfer
 		.addSubcommand((sub) =>
 			sub
 				.setName("transfer")
@@ -195,8 +272,6 @@ export default {
 					o.setName("user").setDescription("New organiser").setRequired(true),
 				),
 		)
-
-		// /gb setstatus
 		.addSubcommand((sub) =>
 			sub
 				.setName("setstatus")
@@ -208,7 +283,8 @@ export default {
 						.setRequired(true)
 						.addChoices(
 							{ name: "🟢 Open", value: "OPEN" },
-							{ name: "🔒 Locked", value: "LOCKED" },
+							{ name: "✅ Claimed", value: "CLAIMED" },
+							{ name: "🔒 Locked (admin freeze)", value: "LOCKED" },
 							{ name: "🛒 Purchased", value: "PURCHASED" },
 							{ name: "🏭 At Warehouse", value: "AT_WAREHOUSE" },
 							{ name: "🚢 Shipped", value: "SHIPPED" },
@@ -220,8 +296,6 @@ export default {
 						),
 				),
 		)
-
-		// /gb setprice
 		.addSubcommand((sub) =>
 			sub
 				.setName("setprice")
@@ -241,8 +315,6 @@ export default {
 						.setRequired(true),
 				),
 		)
-
-		// /gb setshipping
 		.addSubcommand((sub) =>
 			sub
 				.setName("setshipping")
@@ -274,8 +346,6 @@ export default {
 						.setRequired(false),
 				),
 		)
-
-		// /gb setcustoms
 		.addSubcommand((sub) =>
 			sub
 				.setName("setcustoms")
@@ -295,8 +365,6 @@ export default {
 						.setRequired(false),
 				),
 		)
-
-		// /gb claim
 		.addSubcommand((sub) =>
 			sub
 				.setName("claim")
@@ -309,8 +377,6 @@ export default {
 						.setAutocomplete(true),
 				),
 		)
-
-		// /gb claims
 		.addSubcommandGroup((group) =>
 			group
 				.setName("claims")
@@ -320,12 +386,17 @@ export default {
 				)
 				.addSubcommand((sub) =>
 					sub
+						.setName("manage")
+						.setDescription("Resolve claim conflicts per kit (organiser only)"),
+				)
+				.addSubcommand((sub) =>
+					sub
 						.setName("unclaim")
-						.setDescription("Cancel a specific claim")
+						.setDescription("Cancel one of your claims")
 						.addStringOption((o) =>
 							o
 								.setName("claim")
-								.setDescription("Claim to cancel")
+								.setDescription("Kit to unclaim")
 								.setRequired(true)
 								.setAutocomplete(true),
 						),
@@ -350,6 +421,8 @@ export default {
 				),
 		),
 
+	// ─── Autocomplete ─────────────────────────────────────────────────────────
+
 	async autocomplete(interaction) {
 		const subcommand = interaction.options.getSubcommand();
 		const focused = interaction.options.getFocused();
@@ -359,77 +432,77 @@ export default {
 			return;
 		}
 
-		// /gb addkit — all kits in DB, excluding ones already in this GB
 		if (subcommand === "addkit") {
 			const existing = await prisma.groupBuyKit.findMany({
 				where: { groupBuy: { threadId: interaction.channelId } },
 				select: { kitId: true },
 			});
 			const excludedIds = existing.map((e) => e.kitId);
-
 			const results = await prisma.kit.findMany({
 				where: {
-					product_name: { contains: focused, mode: "insensitive" },
+					product_name: icontains(focused),
 					id: { notIn: excludedIds },
 				},
 				take: 5,
 			});
-
 			await interaction.respond(
 				results.map((k) => ({ name: k.product_name, value: k.id })),
 			);
 			return;
 		}
 
-		// /gb removekit — only kits in this GB
 		if (subcommand === "removekit") {
 			const results = await prisma.groupBuyKit.findMany({
 				where: {
 					groupBuy: { threadId: interaction.channelId },
-					kit: { product_name: { contains: focused, mode: "insensitive" } },
+					kit: { product_name: icontains(focused) },
 				},
 				include: { kit: true },
 				take: 5,
 			});
-
 			await interaction.respond(
 				results.map((gbk) => ({ name: gbk.kit.product_name, value: gbk.id })),
 			);
 			return;
 		}
 
-		// /gb claim — kits in this GB
 		if (subcommand === "claim") {
+			// Exclude kits the user already has an active claim for
+			const alreadyClaimed = await prisma.groupBuyClaim.findMany({
+				where: {
+					groupBuy: { threadId: interaction.channelId },
+					userId: interaction.user.id,
+					status: { not: "CANCELLED" },
+				},
+				select: { groupBuyKitId: true },
+			});
+			const excludedGbkIds = alreadyClaimed.map((c) => c.groupBuyKitId);
 			const results = await prisma.groupBuyKit.findMany({
 				where: {
 					groupBuy: { threadId: interaction.channelId },
-					kit: { product_name: { contains: focused, mode: "insensitive" } },
+					kit: { product_name: icontains(focused) },
+					id: { notIn: excludedGbkIds },
 				},
 				include: { kit: true },
 				take: 5,
 			});
-
 			await interaction.respond(
 				results.map((gbk) => ({ name: gbk.kit.product_name, value: gbk.id })),
 			);
 			return;
 		}
 
-		// /gb claims unclaim — caller's active claims in this GB
 		if (subcommand === "unclaim") {
 			const results = await prisma.groupBuyClaim.findMany({
 				where: {
 					groupBuy: { threadId: interaction.channelId },
 					userId: interaction.user.id,
 					status: { not: "CANCELLED" },
-					groupBuyKit: {
-						kit: { product_name: { contains: focused, mode: "insensitive" } },
-					},
+					groupBuyKit: { kit: { product_name: icontains(focused) } },
 				},
 				include: { groupBuyKit: { include: { kit: true } } },
 				take: 5,
 			});
-
 			await interaction.respond(
 				results.map((c) => ({
 					name: c.groupBuyKit.kit.product_name,
@@ -439,20 +512,16 @@ export default {
 			return;
 		}
 
-		// /gb claims transfer — all active claims in this GB
 		if (subcommand === "transfer") {
 			const results = await prisma.groupBuyClaim.findMany({
 				where: {
 					groupBuy: { threadId: interaction.channelId },
 					status: { not: "CANCELLED" },
-					groupBuyKit: {
-						kit: { product_name: { contains: focused, mode: "insensitive" } },
-					},
+					groupBuyKit: { kit: { product_name: icontains(focused) } },
 				},
 				include: { groupBuyKit: { include: { kit: true } } },
 				take: 5,
 			});
-
 			await interaction.respond(
 				results.map((c) => ({
 					name: `${c.groupBuyKit.kit.product_name} — <@${c.userId}>`,
@@ -465,6 +534,8 @@ export default {
 		await interaction.respond([]);
 	},
 
+	// ─── Execute ──────────────────────────────────────────────────────────────
+
 	async execute(interaction) {
 		const subcommand = interaction.options.getSubcommand();
 		const subcommandGroup = interaction.options.getSubcommandGroup(false);
@@ -474,7 +545,6 @@ export default {
 			const existing = await prisma.groupBuy.findUnique({
 				where: { threadId: interaction.channelId },
 			});
-
 			if (existing) {
 				await interaction.reply({
 					content: "A group buy already exists for this thread.",
@@ -482,7 +552,6 @@ export default {
 				});
 				return;
 			}
-
 			const gb = await prisma.groupBuy.create({
 				data: {
 					threadId: interaction.channelId,
@@ -491,9 +560,7 @@ export default {
 				},
 				include: { kits: { include: { kit: true } }, claims: true },
 			});
-
-			const embed = buildGbEmbed(gb);
-			await interaction.reply({ embeds: [embed] });
+			await interaction.reply({ embeds: [buildGbEmbed(gb)] });
 			return;
 		}
 
@@ -501,9 +568,10 @@ export default {
 		if (subcommand === "info") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			const embed = buildGbEmbed(gb);
-			await interaction.reply({ embeds: [embed] });
+			await interaction.reply({
+				embeds: [buildGbEmbed(gb)],
+				flags: MessageFlags.Ephemeral,
+			});
 			return;
 		}
 
@@ -511,18 +579,17 @@ export default {
 		if (subcommand === "addkit") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			if (gb.ownerId !== interaction.user.id) {
+			if (await isLocked(interaction, gb)) return;
+			const { allowed, adminOverride } = checkOwner(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the group buy organiser can add kits.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
 			const kitId = interaction.options.getString("kit", true);
 			const kit = await prisma.kit.findUnique({ where: { id: kitId } });
-
 			if (!kit) {
 				await interaction.reply({
 					content: "Kit not found.",
@@ -530,26 +597,26 @@ export default {
 				});
 				return;
 			}
-
 			await prisma.groupBuyKit.create({
 				data: { groupBuyId: gb.id, kitId: kit.id },
 			});
-
-			const allKitsAfterAdd = await prisma.groupBuyKit.findMany({
+			const allKits = await prisma.groupBuyKit.findMany({
 				where: { groupBuyId: gb.id },
 				include: { kit: true },
 			});
-			const totalWeightAfterAdd = allKitsAfterAdd.reduce(
-				(sum, k) => sum + k.kit.weight_grams,
+			const totalWeight = allKits.reduce(
+				(sum, k) => sum + (k.kit.weight_grams ?? 0),
 				0,
 			);
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
-				data: { totalWeight: totalWeightAfterAdd },
+				data: { totalWeight },
 			});
-
 			await interaction.reply(
-				`Added **${kit.product_name}** to the group buy. Total kit weight: ${totalWeightAfterAdd}g.`,
+				withOverrideNote(
+					`Added **${kit.product_name}** to the group buy. Total kit weight: ${totalWeight}g.`,
+					adminOverride,
+				),
 			);
 			return;
 		}
@@ -558,22 +625,19 @@ export default {
 		if (subcommand === "removekit") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			if (gb.ownerId !== interaction.user.id) {
+			if (await isLocked(interaction, gb)) return;
+			const { allowed, adminOverride } = checkOwner(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the group buy organiser can remove kits.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
 			const gbkId = interaction.options.getString("kit", true);
-
-			// Check for active claims before removing
 			const claimCount = await prisma.groupBuyClaim.count({
 				where: { groupBuyKitId: gbkId, status: { not: "CANCELLED" } },
 			});
-
 			if (claimCount > 0) {
 				await interaction.reply({
 					content: `Cannot remove this kit — it has ${claimCount} active claim${claimCount !== 1 ? "s" : ""}. Cancel the claims first.`,
@@ -581,27 +645,27 @@ export default {
 				});
 				return;
 			}
-
 			const gbk = await prisma.groupBuyKit.delete({
 				where: { id: gbkId },
 				include: { kit: true },
 			});
-
-			const allKitsAfterRemove = await prisma.groupBuyKit.findMany({
+			const allKits = await prisma.groupBuyKit.findMany({
 				where: { groupBuyId: gb.id },
 				include: { kit: true },
 			});
-			const totalWeightAfterRemove = allKitsAfterRemove.reduce(
-				(sum, k) => sum + k.kit.weight_grams,
+			const totalWeight = allKits.reduce(
+				(sum, k) => sum + (k.kit.weight_grams ?? 0),
 				0,
 			);
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
-				data: { totalWeight: totalWeightAfterRemove },
+				data: { totalWeight },
 			});
-
 			await interaction.reply(
-				`Removed **${gbk.kit.product_name}** from the group buy. Total kit weight: ${totalWeightAfterRemove}g.`,
+				withOverrideNote(
+					`Removed **${gbk.kit.product_name}** from the group buy. Total kit weight: ${totalWeight}g.`,
+					adminOverride,
+				),
 			);
 			return;
 		}
@@ -610,22 +674,26 @@ export default {
 		if (subcommand === "setbuyer") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			if (gb.ownerId !== interaction.user.id) {
+			if (await isLocked(interaction, gb)) return;
+			const { allowed, adminOverride } = checkOwner(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the organiser can set the buyer.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
 			const user = interaction.options.getUser("user", true);
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
 				data: { buyerId: user.id },
 			});
-
-			await interaction.reply(`Set <@${user.id}> as the payment handler.`);
+			await interaction.reply(
+				withOverrideNote(
+					`Set <@${user.id}> as the payment handler.`,
+					adminOverride,
+				),
+			);
 			return;
 		}
 
@@ -633,22 +701,26 @@ export default {
 		if (subcommand === "setreceiver") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			if (gb.ownerId !== interaction.user.id) {
+			if (await isLocked(interaction, gb)) return;
+			const { allowed, adminOverride } = checkOwner(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the organiser can set the receiver.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
 			const user = interaction.options.getUser("user", true);
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
 				data: { receiverId: user.id },
 			});
-
-			await interaction.reply(`Set <@${user.id}> as the parcel receiver.`);
+			await interaction.reply(
+				withOverrideNote(
+					`Set <@${user.id}> as the parcel receiver.`,
+					adminOverride,
+				),
+			);
 			return;
 		}
 
@@ -656,23 +728,25 @@ export default {
 		if (subcommand === "transfer") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			if (gb.ownerId !== interaction.user.id) {
+			if (await isLocked(interaction, gb)) return;
+			const { allowed, adminOverride } = checkOwner(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the current organiser can transfer ownership.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
 			const user = interaction.options.getUser("user", true);
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
 				data: { ownerId: user.id },
 			});
-
 			await interaction.reply(
-				`Transferred group buy ownership to <@${user.id}>.`,
+				withOverrideNote(
+					`Transferred group buy ownership to <@${user.id}>.`,
+					adminOverride,
+				),
 			);
 			return;
 		}
@@ -682,25 +756,37 @@ export default {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
 
-			if (gb.ownerId !== interaction.user.id) {
+			const newStatus = interaction.options.getString(
+				"status",
+				true,
+			) as GroupBuyStatus;
+			const settingLocked = newStatus === "LOCKED";
+			const unsettingLocked = gb.status === "LOCKED";
+
+			if ((settingLocked || unsettingLocked) && !isAdmin(interaction)) {
+				await interaction.reply({
+					content:
+						"Only a server administrator can lock or unlock a group buy.",
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			const { allowed, adminOverride } = checkOwner(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the organiser can update the status.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
-			const status = interaction.options.getString(
-				"status",
-				true,
-			) as GroupBuyStatus;
-
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
-				data: { status },
+				data: { status: newStatus },
 			});
-
-			await interaction.reply(`Status updated to **${status}**.`);
+			await interaction.reply(
+				withOverrideNote(`Status updated to **${newStatus}**.`, adminOverride),
+			);
 			return;
 		}
 
@@ -708,58 +794,57 @@ export default {
 		if (subcommand === "setprice") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			const isAuthorised =
-				gb.ownerId === interaction.user.id ||
-				gb.buyerId === interaction.user.id;
-
-			if (!isAuthorised) {
+			if (await isLocked(interaction, gb)) return;
+			const { allowed, adminOverride } = checkOwnerOrBuyer(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the organiser or buyer can set the price.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
 			const costPrice = interaction.options.getInteger("cost_price", true);
 			const inrConversionRate = interaction.options.getNumber("inr_rate", true);
-
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
 				data: { costPrice, inrConversionRate },
 			});
 
-			// Snapshot kit costs to all active claims
 			const activeClaims = await prisma.groupBuyClaim.findMany({
 				where: { groupBuyId: gb.id, status: { not: "CANCELLED" } },
 				include: { groupBuyKit: { include: { kit: true } } },
 			});
-
-			// Total MSRP of all claimed kits (for proportional split)
 			const totalMsrp = activeClaims.reduce(
 				(sum, c) => sum + c.groupBuyKit.kit.jpy_price,
 				0,
 			);
-
-			await Promise.all(
-				activeClaims.map((claim) => {
-					const proportion = claim.groupBuyKit.kit.jpy_price / totalMsrp;
-					const data: {
-						calculatedKitCost: number;
-						calculatedCustomsCost?: number;
-					} = { calculatedKitCost: Math.round(proportion * costPrice) };
-					// Pre-snapshot customs if costPrice already set — same MSRP proportion
-					if (gb.customsCost !== null) {
-						data.calculatedCustomsCost = Math.round(
-							proportion * gb.customsCost,
-						);
-					}
-					return prisma.groupBuyClaim.update({ where: { id: claim.id }, data });
-				}),
-			);
-
+			if (totalMsrp > 0) {
+				await Promise.all(
+					activeClaims.map((claim) => {
+						const proportion = claim.groupBuyKit.kit.jpy_price / totalMsrp;
+						const data: {
+							calculatedKitCost: number;
+							calculatedCustomsCost?: number;
+						} = {
+							calculatedKitCost: Math.round(proportion * costPrice),
+						};
+						if (gb.customsCost !== null) {
+							data.calculatedCustomsCost = Math.round(
+								proportion * gb.customsCost,
+							);
+						}
+						return prisma.groupBuyClaim.update({
+							where: { id: claim.id },
+							data,
+						});
+					}),
+				);
+			}
 			await interaction.reply(
-				`Cost price set to ¥${costPrice.toLocaleString()} at ₹${inrConversionRate}/¥. Kit costs snapshotted to ${activeClaims.length} claim${activeClaims.length !== 1 ? "s" : ""}.`,
+				withOverrideNote(
+					`Cost price set to ¥${costPrice.toLocaleString()} at ₹${inrConversionRate}/¥. Snapshotted to ${activeClaims.length} claim${activeClaims.length !== 1 ? "s" : ""}.`,
+					adminOverride,
+				),
 			);
 			return;
 		}
@@ -768,19 +853,15 @@ export default {
 		if (subcommand === "setshipping") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			const isAuthorised =
-				gb.ownerId === interaction.user.id ||
-				gb.buyerId === interaction.user.id;
-
-			if (!isAuthorised) {
+			if (await isLocked(interaction, gb)) return;
+			const { allowed, adminOverride } = checkOwnerOrBuyer(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the organiser or buyer can set shipping.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
 			const shippingCost = interaction.options.getInteger(
 				"shipping_cost",
 				true,
@@ -791,7 +872,6 @@ export default {
 			);
 			const trackingNumber = interaction.options.getString("tracking_number");
 			const trackingUrl = interaction.options.getString("tracking_url");
-
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
 				data: {
@@ -802,17 +882,16 @@ export default {
 				},
 			});
 
-			// Snapshot shipping costs to all active claims (split by weight proportion)
 			const activeClaims = await prisma.groupBuyClaim.findMany({
 				where: { groupBuyId: gb.id, status: { not: "CANCELLED" } },
 				include: { groupBuyKit: { include: { kit: true } } },
 			});
-
 			await Promise.all(
 				activeClaims.map((claim) => {
-					const kitWeight = claim.groupBuyKit.kit.weight_grams;
 					const proportion =
-						shippingWeight > 0 ? kitWeight / shippingWeight : 0;
+						shippingWeight > 0
+							? (claim.groupBuyKit.kit.weight_grams ?? 0) / shippingWeight // TODO: change to better default?
+							: 0;
 					return prisma.groupBuyClaim.update({
 						where: { id: claim.id },
 						data: {
@@ -821,9 +900,11 @@ export default {
 					});
 				}),
 			);
-
 			await interaction.reply(
-				`Shipping set to ¥${shippingCost.toLocaleString()} for ${shippingWeight}g (courier weight). Shipping costs snapshotted to ${activeClaims.length} claim${activeClaims.length !== 1 ? "s" : ""}.`,
+				withOverrideNote(
+					`Shipping set to ¥${shippingCost.toLocaleString()} for ${shippingWeight}g. Snapshotted to ${activeClaims.length} claim${activeClaims.length !== 1 ? "s" : ""}.`,
+					adminOverride,
+				),
 			);
 			return;
 		}
@@ -832,55 +913,48 @@ export default {
 		if (subcommand === "setcustoms") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
-
-			const isAuthorised =
-				gb.ownerId === interaction.user.id ||
-				gb.buyerId === interaction.user.id;
-
-			if (!isAuthorised) {
+			if (await isLocked(interaction, gb)) return;
+			const { allowed, adminOverride } = checkOwnerOrBuyer(interaction, gb);
+			if (!allowed) {
 				await interaction.reply({
 					content: "Only the organiser or buyer can set customs.",
 					flags: MessageFlags.Ephemeral,
 				});
 				return;
 			}
-
 			const customsCost = interaction.options.getInteger("customs_cost", true);
 			const trackingUrl = interaction.options.getString("tracking_url");
-
 			await prisma.groupBuy.update({
 				where: { id: gb.id },
-				data: {
-					customsCost,
-					customsTrackingUrl: trackingUrl ?? undefined,
-				},
+				data: { customsCost, customsTrackingUrl: trackingUrl ?? undefined },
 			});
 
-			// Snapshot customs costs (same MSRP proportion as kit cost)
 			const activeClaims = await prisma.groupBuyClaim.findMany({
 				where: { groupBuyId: gb.id, status: { not: "CANCELLED" } },
 				include: { groupBuyKit: { include: { kit: true } } },
 			});
-
 			const totalMsrp = activeClaims.reduce(
 				(sum, c) => sum + c.groupBuyKit.kit.jpy_price,
 				0,
 			);
-
-			await Promise.all(
-				activeClaims.map((claim) => {
-					const proportion = claim.groupBuyKit.kit.jpy_price / totalMsrp;
-					return prisma.groupBuyClaim.update({
-						where: { id: claim.id },
-						data: {
-							calculatedCustomsCost: Math.round(proportion * customsCost),
-						},
-					});
-				}),
-			);
-
+			if (totalMsrp > 0) {
+				await Promise.all(
+					activeClaims.map((claim) => {
+						const proportion = claim.groupBuyKit.kit.jpy_price / totalMsrp;
+						return prisma.groupBuyClaim.update({
+							where: { id: claim.id },
+							data: {
+								calculatedCustomsCost: Math.round(proportion * customsCost),
+							},
+						});
+					}),
+				);
+			}
 			await interaction.reply(
-				`Customs cost set to ¥${customsCost.toLocaleString()}. Customs costs snapshotted to ${activeClaims.length} claim${activeClaims.length !== 1 ? "s" : ""}.`,
+				withOverrideNote(
+					`Customs set to ¥${customsCost.toLocaleString()}. Snapshotted to ${activeClaims.length} claim${activeClaims.length !== 1 ? "s" : ""}.`,
+					adminOverride,
+				),
 			);
 			return;
 		}
@@ -889,6 +963,7 @@ export default {
 		if (subcommand === "claim") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
+			if (await isLocked(interaction, gb)) return;
 
 			if (gb.status !== "OPEN") {
 				await interaction.reply({
@@ -899,11 +974,27 @@ export default {
 			}
 
 			const gbkId = interaction.options.getString("kit", true);
+
+			// Duplicate claim protection
+			const existing = await prisma.groupBuyClaim.findFirst({
+				where: {
+					groupBuyKitId: gbkId,
+					userId: interaction.user.id,
+					status: { not: "CANCELLED" },
+				},
+			});
+			if (existing) {
+				await interaction.reply({
+					content: "You already have an active claim for this kit.",
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
 			const gbk = await prisma.groupBuyKit.findUnique({
 				where: { id: gbkId },
 				include: { kit: true },
 			});
-
 			if (!gbk) {
 				await interaction.reply({
 					content: "Kit not found in this group buy.",
@@ -912,13 +1003,16 @@ export default {
 				return;
 			}
 
-			await prisma.groupBuyClaim.create({
+			const claim = await prisma.groupBuyClaim.create({
 				data: {
 					groupBuyId: gb.id,
 					groupBuyKitId: gbk.id,
 					userId: interaction.user.id,
 				},
 			});
+
+			// Auto-snapshot if financials already set
+			await snapshotKitCost(claim.id, gbk.kit.jpy_price, gb);
 
 			await interaction.reply({
 				content: `Claimed **${gbk.kit.product_name}**! The organiser will confirm your claim.`,
@@ -927,17 +1021,18 @@ export default {
 			return;
 		}
 
-		// ── /gb claims subcommand group ───────────────────────────────────────
+		// ── /gb claims ────────────────────────────────────────────────────────
 		if (subcommandGroup === "claims") {
 			const gb = await getGbForThread(interaction);
 			if (!gb) return;
+			if (await isLocked(interaction, gb)) return;
 
-			// /gb claims view
+			// /gb claims view ─────────────────────────────────────────────────
 			if (subcommand === "view") {
-				const isOwner = gb.ownerId === interaction.user.id;
+				const isOwner =
+					gb.ownerId === interaction.user.id || isAdmin(interaction);
 
 				if (isOwner) {
-					// Owner sees all claims grouped by kit
 					const gbWithClaims = await prisma.groupBuy.findUnique({
 						where: { id: gb.id },
 						include: {
@@ -976,7 +1071,6 @@ export default {
 						flags: MessageFlags.Ephemeral,
 					});
 				} else {
-					// Regular user sees their own claims
 					const myClaims = await prisma.groupBuyClaim.findMany({
 						where: {
 							groupBuyId: gb.id,
@@ -1004,17 +1098,14 @@ export default {
 						const customs = c.calculatedCustomsCost
 							? `¥${c.calculatedCustomsCost.toLocaleString()}`
 							: "TBD";
-
-						const inrRate = gb.inrConversionRate;
 						const totalJpy =
 							(c.calculatedKitCost ?? 0) +
 							(c.calculatedShippingCost ?? 0) +
 							(c.calculatedCustomsCost ?? 0);
 						const totalInr =
-							inrRate && totalJpy > 0
-								? ` = ₹${Math.round(totalJpy * inrRate).toLocaleString()}`
+							gb.inrConversionRate && totalJpy > 0
+								? ` = ₹${Math.round(totalJpy * gb.inrConversionRate).toLocaleString()}`
 								: "";
-
 						return `**${c.groupBuyKit.kit.product_name}** [${c.status}]\n  Kit: ${kitCost} | Shipping: ${shipping} | Customs: ${customs}${totalInr ? `\n  Total: ¥${totalJpy.toLocaleString()}${totalInr}` : ""}`;
 					});
 
@@ -1026,15 +1117,167 @@ export default {
 				return;
 			}
 
-			// /gb claims unclaim
+			// /gb claims manage ───────────────────────────────────────────────
+			if (subcommand === "manage") {
+				const { allowed } = checkOwner(interaction, gb);
+				if (!allowed) {
+					await interaction.reply({
+						content: "Only the organiser can manage claims.",
+						flags: MessageFlags.Ephemeral,
+					});
+					return;
+				}
+
+				const kitsWithClaims = await prisma.groupBuyKit.findMany({
+					where: { groupBuyId: gb.id },
+					include: {
+						kit: true,
+						claims: { where: { status: { not: "CANCELLED" } } },
+					},
+				});
+
+				const contested = kitsWithClaims.filter((k) => k.claims.length > 1);
+				const resolved = kitsWithClaims.filter((k) => k.claims.length === 1);
+				const unclaimed = kitsWithClaims.filter((k) => k.claims.length === 0);
+
+				if (contested.length === 0) {
+					const parts: string[] = [];
+					if (resolved.length > 0) {
+						parts.push(
+							`✅ Resolved:\n${resolved.map((k) => `  - **${k.kit.product_name}** → <@${k.claims[0].userId}>`).join("\n")}`,
+						);
+					}
+					if (unclaimed.length > 0) {
+						parts.push(
+							`⚠️ No claims yet:\n${unclaimed.map((k) => `  - **${k.kit.product_name}**`).join("\n")}`,
+						);
+					}
+					const summary = parts.join("\n\n") || "No claims yet.";
+					const canAdvance =
+						unclaimed.length === 0 &&
+						resolved.length > 0 &&
+						gb.status === "OPEN";
+					await interaction.reply({
+						content: canAdvance
+							? `${summary}\n\nAll kits are claimed. Use \`/gb setstatus\` to advance to **CLAIMED**.`
+							: summary,
+						flags: MessageFlags.Ephemeral,
+					});
+					return;
+				}
+
+				// Up to 5 select menus (Discord component limit)
+				const shown = contested.slice(0, 5);
+				const rows = shown.map((gbk) => {
+					const select = new StringSelectMenuBuilder()
+						.setCustomId(`claims:confirm:${gbk.id}`)
+						.setPlaceholder(`${gbk.kit.product_name} — pick one claimer`)
+						.addOptions(
+							gbk.claims.map((c) => ({
+								label: `User ${c.userId.slice(-6)}`,
+								description: `<@${c.userId}>`,
+								value: c.id,
+							})),
+						);
+					return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+						select,
+					);
+				});
+
+				const embed = new EmbedBuilder()
+					.setTitle("Claim conflicts")
+					.setColor(0xe67e22)
+					.setDescription(
+						`${contested.length} kit${contested.length !== 1 ? "s have" : " has"} multiple claimers. ` +
+							`Select one winner per kit — all others will be cancelled.\n\n` +
+							contested
+								.map(
+									(k) =>
+										`**${k.kit.product_name}** — ${k.claims.length} claimers: ${k.claims.map((c) => `<@${c.userId}>`).join(", ")}`,
+								)
+								.join("\n"),
+					);
+
+				if (contested.length > 5) {
+					embed.setFooter({
+						text: `Showing 5 of ${contested.length} conflicts. Run /gb claims manage again after resolving these.`,
+					});
+				}
+
+				const response = await interaction.reply({
+					embeds: [embed],
+					components: rows,
+					flags: MessageFlags.Ephemeral,
+				});
+
+				const collector = response.createMessageComponentCollector({
+					componentType: ComponentType.StringSelect,
+					time: 5 * 60 * 1000,
+				});
+
+				collector.on("collect", async (sel: StringSelectMenuInteraction) => {
+					const [, , gbkId] = sel.customId.split(":");
+					const confirmedClaimId = sel.values[0];
+
+					const allClaims = await prisma.groupBuyClaim.findMany({
+						where: { groupBuyKitId: gbkId, status: { not: "CANCELLED" } },
+						include: { groupBuyKit: { include: { kit: true } } },
+					});
+					const kitName = allClaims[0]?.groupBuyKit.kit.product_name ?? "kit";
+
+					await prisma.groupBuyClaim.update({
+						where: { id: confirmedClaimId },
+						data: { status: "CONFIRMED" },
+					});
+					await prisma.groupBuyClaim.updateMany({
+						where: {
+							groupBuyKitId: gbkId,
+							id: { not: confirmedClaimId },
+							status: { not: "CANCELLED" },
+						},
+						data: { status: "CANCELLED" },
+					});
+
+					await sel.reply({
+						content: `✅ Confirmed claim for **${kitName}**.`,
+						flags: MessageFlags.Ephemeral,
+					});
+
+					// Check if all kits now have exactly one non-cancelled claim
+					const stillPending = await prisma.groupBuyClaim.count({
+						where: { groupBuyId: gb.id, status: "PENDING" },
+					});
+					const stillContested = await prisma.groupBuyKit.findMany({
+						where: { groupBuyId: gb.id },
+						include: { claims: { where: { status: { not: "CANCELLED" } } } },
+					});
+					const hasConflicts = stillContested.some((k) => k.claims.length > 1);
+
+					if (!hasConflicts && stillPending === 0) {
+						await sel.followUp({
+							content:
+								"All conflicts resolved. Use `/gb setstatus` to advance to **CLAIMED** when ready.",
+							flags: MessageFlags.Ephemeral,
+						});
+					}
+				});
+
+				collector.on("end", async (_, reason) => {
+					if (reason === "time") {
+						await interaction.editReply({ components: [] });
+					}
+				});
+
+				return;
+			}
+
+			// /gb claims unclaim ──────────────────────────────────────────────
 			if (subcommand === "unclaim") {
 				const claimId = interaction.options.getString("claim", true);
-
 				const claim = await prisma.groupBuyClaim.findUnique({
 					where: { id: claimId },
 					include: { groupBuyKit: { include: { kit: true } } },
 				});
-
 				if (!claim) {
 					await interaction.reply({
 						content: "Claim not found.",
@@ -1042,10 +1285,9 @@ export default {
 					});
 					return;
 				}
-
-				const isOwner = gb.ownerId === interaction.user.id;
+				const isOwner =
+					gb.ownerId === interaction.user.id || isAdmin(interaction);
 				const isClaimer = claim.userId === interaction.user.id;
-
 				if (!isOwner && !isClaimer) {
 					await interaction.reply({
 						content: "You can only cancel your own claims.",
@@ -1053,12 +1295,10 @@ export default {
 					});
 					return;
 				}
-
 				await prisma.groupBuyClaim.update({
 					where: { id: claimId },
 					data: { status: "CANCELLED" },
 				});
-
 				await interaction.reply({
 					content: `Cancelled claim for **${claim.groupBuyKit.kit.product_name}**.`,
 					flags: MessageFlags.Ephemeral,
@@ -1066,27 +1306,22 @@ export default {
 				return;
 			}
 
-			// /gb claims transfer
+			// /gb claims transfer ─────────────────────────────────────────────
 			if (subcommand === "transfer") {
-				const gb2 = await getGbForThread(interaction);
-				if (!gb2) return;
-
-				if (gb2.ownerId !== interaction.user.id) {
+				const { allowed, adminOverride } = checkOwner(interaction, gb);
+				if (!allowed) {
 					await interaction.reply({
 						content: "Only the organiser can transfer claims.",
 						flags: MessageFlags.Ephemeral,
 					});
 					return;
 				}
-
 				const claimId = interaction.options.getString("claim", true);
 				const newUser = interaction.options.getUser("user", true);
-
 				const claim = await prisma.groupBuyClaim.findUnique({
 					where: { id: claimId },
 					include: { groupBuyKit: { include: { kit: true } } },
 				});
-
 				if (!claim) {
 					await interaction.reply({
 						content: "Claim not found.",
@@ -1094,14 +1329,31 @@ export default {
 					});
 					return;
 				}
-
+				// Duplicate protection on transfer target
+				const conflict = await prisma.groupBuyClaim.findFirst({
+					where: {
+						groupBuyKitId: claim.groupBuyKitId,
+						userId: newUser.id,
+						status: { not: "CANCELLED" },
+						id: { not: claimId },
+					},
+				});
+				if (conflict) {
+					await interaction.reply({
+						content: `<@${newUser.id}> already has an active claim for **${claim.groupBuyKit.kit.product_name}**.`,
+						flags: MessageFlags.Ephemeral,
+					});
+					return;
+				}
 				await prisma.groupBuyClaim.update({
 					where: { id: claimId },
 					data: { userId: newUser.id },
 				});
-
 				await interaction.reply(
-					`Transferred claim for **${claim.groupBuyKit.kit.product_name}** to <@${newUser.id}>.`,
+					withOverrideNote(
+						`Transferred claim for **${claim.groupBuyKit.kit.product_name}** to <@${newUser.id}>.`,
+						adminOverride,
+					),
 				);
 				return;
 			}
