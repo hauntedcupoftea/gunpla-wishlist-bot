@@ -1,13 +1,14 @@
 import {
 	ActionRowBuilder,
+	ButtonBuilder,
+	ButtonStyle,
+	ChannelType,
 	type ChatInputCommandInteraction,
-	ComponentType,
 	EmbedBuilder,
 	MessageFlags,
 	PermissionFlagsBits,
 	SlashCommandBuilder,
 	StringSelectMenuBuilder,
-	type StringSelectMenuInteraction,
 } from "discord.js";
 import type {
 	GroupBuy,
@@ -199,7 +200,7 @@ function buildGbEmbed(gb: GbWithKits): EmbedBuilder {
 		embed.addFields({ name: "Tracking", value: trackingLines.join("\n") });
 	}
 
-	embed.setFooter({ text: `GB ID: ${gb.id}` }).setTimestamp();
+	embed.setFooter({ text: `GB Link: ${gb.id}` }).setTimestamp();
 	return embed;
 }
 
@@ -477,7 +478,6 @@ export default {
 				},
 				take: 5,
 			});
-			console.info(results);
 			await interaction.respond(
 				results.map((k) => ({ name: k.product_name, value: k.id })),
 			);
@@ -597,6 +597,42 @@ export default {
 	async execute(interaction) {
 		const subcommand = interaction.options.getSubcommand();
 		const subcommandGroup = interaction.options.getSubcommandGroup(false);
+
+		try {
+			let channel = interaction.channel;
+
+			if (channel?.partial) {
+				channel = await channel.fetch();
+			}
+
+			let parent = channel?.isThread() ? channel.parent : null;
+			if (channel?.isThread() && !parent && channel.parentId) {
+				parent = (await interaction.client.channels.fetch(
+					channel.parentId,
+				)) as any;
+			}
+
+			if (
+				!(channel?.type === ChannelType.PublicThread) ||
+				!(parent?.type === ChannelType.GuildForum)
+			) {
+				await interaction.reply({
+					content: `This command must be run in a forum thread. You are in ${channel || "an unknown channel"}.`,
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+		} catch (error: any) {
+			console.error("Error verifying forum channel:", error);
+			await interaction.reply({
+				content:
+					error.code === 50001
+						? "❌ I am missing the **View Channel** permission here! Please check my role permissions."
+						: "❌ An error occurred while trying to verify this channel.",
+				flags: MessageFlags.Ephemeral,
+			});
+			return;
+		}
 
 		// ── /gb create ────────────────────────────────────────────────────────
 		if (subcommand === "create") {
@@ -1348,35 +1384,14 @@ export default {
 				const resolved = kitsWithClaims.filter((k) => k.claims.length === 1);
 				const unclaimed = kitsWithClaims.filter((k) => k.claims.length === 0);
 
-				if (contested.length === 0) {
-					const parts: string[] = [];
-					if (resolved.length > 0) {
-						parts.push(
-							`✅ Resolved:\n${resolved.map((k) => `  - **${k.kit.product_name} #${k.slotNumber}** → <@${k.claims[0].userId}>`).join("\n")}`,
-						);
-					}
-					if (unclaimed.length > 0) {
-						parts.push(
-							`⚠️ No claims yet:\n${unclaimed.map((k) => `  - **${k.kit.product_name}**`).join("\n")}`,
-						);
-					}
-					const summary = parts.join("\n\n") || "No claims yet.";
-					const canAdvance =
-						unclaimed.length === 0 &&
-						resolved.length > 0 &&
-						gb.status === "OPEN";
-					await interaction.reply({
-						content: canAdvance
-							? `${summary}\n\nAll kits are claimed. Use \`/gb setstatus\` to advance to **CLAIMED**.`
-							: summary,
-						flags: MessageFlags.Ephemeral,
-					});
-					return;
-				}
+				const pendingUncontested = resolved.filter(
+					(k) => k.claims[0].status === "PENDING",
+				);
 
-				// Up to 5 select menus (Discord component limit)
-				const shown = contested.slice(0, 5);
-				const rows = shown.map((gbk) => {
+				const maxSelects = pendingUncontested.length > 0 ? 4 : 5;
+				const shown = contested.slice(0, maxSelects);
+
+				const selectRows = shown.map((gbk) => {
 					const slotLabel = `${gbk.kit.product_name} #${gbk.slotNumber}`;
 					const select = new StringSelectMenuBuilder()
 						.setCustomId(`claims:confirm:${gbk.id}`)
@@ -1393,90 +1408,175 @@ export default {
 					);
 				});
 
-				const embed = new EmbedBuilder()
-					.setTitle("Claim conflicts")
-					.setColor(0xe67e22)
-					.setDescription(
-						`${contested.length} slot${contested.length !== 1 ? "s have" : " has"} multiple claimers. ` +
-							`Select one winner per slot — all others will be cancelled.\n\n` +
-							contested
+				const components: (
+					| ActionRowBuilder<StringSelectMenuBuilder>
+					| ActionRowBuilder<ButtonBuilder>
+				)[] = [...selectRows];
+
+				if (pendingUncontested.length > 0) {
+					const btn = new ButtonBuilder()
+						.setCustomId("claims:confirm_uncontested")
+						.setLabel(
+							`Confirm ${pendingUncontested.length} uncontested claim${
+								pendingUncontested.length !== 1 ? "s" : ""
+							}`,
+						)
+						.setStyle(ButtonStyle.Success);
+					components.push(
+						new ActionRowBuilder<ButtonBuilder>().addComponents(btn),
+					);
+				}
+
+				if (contested.length === 0) {
+					const parts: string[] = [];
+					if (resolved.length > 0) {
+						parts.push(
+							`✅ Resolved:\n${resolved
 								.map(
 									(k) =>
-										`**${k.kit.product_name} #${k.slotNumber}** — ${k.claims.length} claimers: ${k.claims.map((c) => `<@${c.userId}>`).join(", ")}`,
+										`  - **${k.kit.product_name} #${k.slotNumber}** → <@${k.claims[0].userId}> [${k.claims[0].status}]`,
 								)
-								.join("\n"),
-					);
+								.join("\n")}`,
+						);
+					}
+					if (unclaimed.length > 0) {
+						parts.push(
+							`⚠️ No claims yet:\n${unclaimed
+								.map((k) => `  - **${k.kit.product_name}**`)
+								.join("\n")}`,
+						);
+					}
+					const summary = parts.join("\n\n") || "No claims yet.";
+					const canAdvance =
+						unclaimed.length === 0 &&
+						resolved.length > 0 &&
+						gb.status === "OPEN" &&
+						pendingUncontested.length === 0;
 
-				if (contested.length > 5) {
-					embed.setFooter({
-						text: `Showing 5 of ${contested.length} conflicts. Run /gb claims manage again after resolving these.`,
+					await interaction.reply({
+						content: canAdvance
+							? `${summary}\n\nAll kits are claimed. Use \`/gb setstatus\` to advance to **CLAIMED**.`
+							: summary,
+						components,
+						flags: MessageFlags.Ephemeral,
+					});
+				} else {
+					const embed = new EmbedBuilder()
+						.setTitle("Claim conflicts")
+						.setColor(0xe67e22)
+						.setDescription(
+							`${contested.length} slot${
+								contested.length !== 1 ? "s have" : " has"
+							} multiple claimers. ` +
+								`Select one winner per slot — all others will be cancelled.\n\n` +
+								contested
+									.map(
+										(k) =>
+											`**${k.kit.product_name} #${k.slotNumber}** — ${
+												k.claims.length
+											} claimers: ${k.claims.map((c) => `<@${c.userId}>`).join(", ")}`,
+									)
+									.join("\n"),
+						);
+
+					if (contested.length > maxSelects) {
+						embed.setFooter({
+							text: `Showing ${maxSelects} of ${contested.length} conflicts. Run /gb claims manage again after resolving these.`,
+						});
+					}
+
+					await interaction.reply({
+						embeds: [embed],
+						components,
+						flags: MessageFlags.Ephemeral,
 					});
 				}
 
-				const response = await interaction.reply({
-					embeds: [embed],
-					components: rows,
-					flags: MessageFlags.Ephemeral,
-				});
+				if (components.length > 0) {
+					const message = await interaction.fetchReply();
 
-				const collector = response.createMessageComponentCollector({
-					componentType: ComponentType.StringSelect,
-					time: 5 * 60 * 1000,
-				});
-
-				collector.on("collect", async (sel: StringSelectMenuInteraction) => {
-					const [, , gbkId] = sel.customId.split(":");
-					const confirmedClaimId = sel.values[0];
-
-					const allClaims = await prisma.groupBuyClaim.findMany({
-						where: { groupBuyKitId: gbkId, status: { not: "CANCELLED" } },
-						include: { groupBuyKit: { include: { kit: true } } },
-					});
-					const kitName = allClaims[0]?.groupBuyKit.kit.product_name ?? "kit";
-
-					await prisma.groupBuyClaim.update({
-						where: { id: confirmedClaimId },
-						data: { status: "CONFIRMED" },
-					});
-					await prisma.groupBuyClaim.updateMany({
-						where: {
-							groupBuyKitId: gbkId,
-							id: { not: confirmedClaimId },
-							status: { not: "CANCELLED" },
-						},
-						data: { status: "CANCELLED" },
+					const collector = message.createMessageComponentCollector({
+						time: 5 * 60 * 1000,
 					});
 
-					await sel.reply({
-						content: `✅ Confirmed claim for **${kitName}**.`,
-						flags: MessageFlags.Ephemeral,
+					collector.on("collect", async (i) => {
+						if (i.isButton() && i.customId === "claims:confirm_uncontested") {
+							await prisma.groupBuyClaim.updateMany({
+								where: {
+									id: { in: pendingUncontested.map((k) => k.claims[0].id) },
+								},
+								data: { status: "CONFIRMED" },
+							});
+
+							await i.reply({
+								content: `✅ Confirmed ${
+									pendingUncontested.length
+								} uncontested claim${pendingUncontested.length !== 1 ? "s" : ""}.`,
+								flags: MessageFlags.Ephemeral,
+							});
+
+							await interaction.editReply({ components: selectRows });
+							return;
+						}
+
+						if (i.isStringSelectMenu()) {
+							const [, , gbkId] = i.customId.split(":");
+							const confirmedClaimId = i.values[0];
+
+							const allClaims = await prisma.groupBuyClaim.findMany({
+								where: { groupBuyKitId: gbkId, status: { not: "CANCELLED" } },
+								include: { groupBuyKit: { include: { kit: true } } },
+							});
+							const kitName =
+								allClaims[0]?.groupBuyKit.kit.product_name ?? "kit";
+
+							await prisma.groupBuyClaim.update({
+								where: { id: confirmedClaimId },
+								data: { status: "CONFIRMED" },
+							});
+							await prisma.groupBuyClaim.updateMany({
+								where: {
+									groupBuyKitId: gbkId,
+									id: { not: confirmedClaimId },
+									status: { not: "CANCELLED" },
+								},
+								data: { status: "CANCELLED" },
+							});
+
+							await i.reply({
+								content: `✅ Confirmed claim for **${kitName}**.`,
+								flags: MessageFlags.Ephemeral,
+							});
+
+							const stillPending = await prisma.groupBuyClaim.count({
+								where: { groupBuyId: gb.id, status: "PENDING" },
+							});
+							const stillContested = await prisma.groupBuyKit.findMany({
+								where: { groupBuyId: gb.id },
+								include: {
+									claims: { where: { status: { not: "CANCELLED" } } },
+								},
+							});
+							const hasConflicts = stillContested.some(
+								(k) => k.claims.length > 1,
+							);
+
+							if (!hasConflicts && stillPending === 0) {
+								await i.followUp({
+									content:
+										"All conflicts resolved. Use `/gb setstatus` to advance to **CLAIMED** when ready.",
+									flags: MessageFlags.Ephemeral,
+								});
+							}
+						}
 					});
 
-					// Check if all kits now have exactly one non-cancelled claim
-					const stillPending = await prisma.groupBuyClaim.count({
-						where: { groupBuyId: gb.id, status: "PENDING" },
+					collector.on("end", async (_collected, reason: string) => {
+						if (reason === "time") {
+							await interaction.editReply({ components: [] });
+						}
 					});
-					const stillContested = await prisma.groupBuyKit.findMany({
-						where: { groupBuyId: gb.id },
-						include: { claims: { where: { status: { not: "CANCELLED" } } } },
-					});
-					const hasConflicts = stillContested.some((k) => k.claims.length > 1);
-
-					if (!hasConflicts && stillPending === 0) {
-						await sel.followUp({
-							content:
-								"All conflicts resolved. Use `/gb setstatus` to advance to **CLAIMED** when ready.",
-							flags: MessageFlags.Ephemeral,
-						});
-					}
-				});
-
-				collector.on("end", async (_, reason) => {
-					if (reason === "time") {
-						await interaction.editReply({ components: [] });
-					}
-				});
-
+				}
 				return;
 			}
 
