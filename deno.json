@@ -1,7 +1,7 @@
 {
   "name": "haro",
-  "version": "2.0.0-beta",
-  "description": "a discord bot for people to add wished gunpla to...",
+  "version": "2.0.0",
+  "description": "Gunpla group-buy Discord bot with REST API",
   "exports": "./src/index.ts",
   "nodeModulesDir": "auto",
   "imports": {
@@ -19,7 +19,9 @@
     "htmlparser2": "npm:htmlparser2@^10.1.0",
     "@types/cli-progress": "npm:@types/cli-progress@^3.11.6",
     "@types/node": "npm:@types/node@^25.3.0",
-    "prisma": "npm:prisma@^7.4.1"
+    "prisma": "npm:prisma@^7.4.1",
+    "elysia": "npm:elysia@^1.2.25",
+    "@elysiajs/swagger": "npm:@elysiajs/swagger@^1.2.2"
   },
   "tasks": {
     "dev": "deno run --watch --env -A src/index.ts",
