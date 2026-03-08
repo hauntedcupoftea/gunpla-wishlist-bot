@@ -9,13 +9,12 @@ services:
       - db
     volumes:
       - .:/app
+      - /app/generated
       - /app/node_modules
     command: >
       /bin/sh -c "
-        deno install --allow-scripts &&
-        deno task db:generate &&
-        deno run --env -A npm:prisma db push &&
-        deno task dev
+        deno task db:migrate:deploy &&
+        deno task start
       "
     networks:
       - gunpla-wishlist-bot

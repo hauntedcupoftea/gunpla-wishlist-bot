@@ -1,4 +1,4 @@
-FROM denoland/deno:alpine
+FROM denoland/deno:debian
 
 WORKDIR /app
 
@@ -12,10 +12,12 @@ COPY --chown=deno:deno deno.json ./
 
 # Install dependencies globally into the Deno cache
 # (This prevents re-downloading npm packages every time you change your code)
-RUN deno install
+RUN deno install 
 
 # Copy the Prisma schema and generate the Prisma Client
 COPY --chown=deno:deno prisma ./prisma
+COPY --chown=deno:deno prisma.config.ts ./
+COPY --chown=deno:deno .env ./
 RUN deno task db:generate
 
 # Copy the rest of the application source code

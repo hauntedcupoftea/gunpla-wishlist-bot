@@ -1,6 +1,6 @@
 {
   "name": "haro",
-  "version": "1.0.0",
+  "version": "2.0.0-beta",
   "description": "a discord bot for people to add wished gunpla to...",
   "exports": "./src/index.ts",
   "nodeModulesDir": "auto",
