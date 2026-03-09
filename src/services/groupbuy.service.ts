@@ -23,97 +23,83 @@
  */
 
 import type {
-  ClaimPaymentEvent,
-  GroupBuy,
-  GroupBuyKit,
-  GroupBuyClaim,
-  Kit,
-} from "../../generated/models.ts";
+	ClaimPaymentEvent,
+	GroupBuy,
+	GroupBuyClaim,
+	GroupBuyKit,
+	Kit,
+} from "../../generated/client.ts";
 import type {
-  GroupBuyStatus,
-  ClaimStatus,
-  PaymentStage,
+	ClaimStatus,
+	GroupBuyStatus,
+	PaymentStage,
 } from "../../generated/enums.ts";
 import { prisma } from "../lib/prisma.ts";
-import { kitNameFilter, CLAIM_STATUS_LABEL } from "../lib/util.ts";
+import { CLAIM_STATUS_LABEL, kitNameFilter } from "../lib/util.ts";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-/** A GroupBuy with its full kit + claim tree attached. */
 export type GroupBuyFull = GroupBuy & {
-  kits: (GroupBuyKit & { kit: Kit; claims: GroupBuyClaim[] })[];
-  claims: (GroupBuyClaim & {
-    groupBuyKit: GroupBuyKit & { kit: Kit };
-    paymentEvents: ClaimPaymentEvent[];
-  })[];
+	kits: (GroupBuyKit & { kit: Kit; claims: GroupBuyClaim[] })[];
+	claims: (GroupBuyClaim & {
+		groupBuyKit: GroupBuyKit & { kit: Kit };
+		paymentEvents: ClaimPaymentEvent[];
+	})[];
 };
 
-/**
- * Per-claim cost breakdown shown to members and organisers.
- * All values are in JPY; INR equivalents are derived at the display layer
- * using GroupBuy.inrConversionRate.
- */
 export interface ClaimCostBreakdown {
-  claimId:                string;
-  userId:                 string;
-  kitName:                string;
-  slotNumber:             number;
-  status:                 string;
-  calculatedKitCost:      number | null;
-  calculatedWarehouseCost:number | null;
-  calculatedShippingCost: number | null;
-  calculatedCustomsCost:  number | null;
-  /** Sum of all non-null calculated costs. */
-  totalJpy:               number;
-  /** Latest payment event for each stage, for status display. */
-  paymentEvents:          ClaimPaymentEvent[];
+	claimId: string;
+	userId: string;
+	kitName: string;
+	slotNumber: number;
+	status: string;
+	calculatedKitCost: number | null;
+	calculatedWarehouseCost: number | null;
+	calculatedShippingCost: number | null;
+	calculatedCustomsCost: number | null;
+	/** Sum of all non-null calculated costs. */
+	totalJpy: number;
+	/** Latest payment event for each stage, for status display. */
+	paymentEvents: ClaimPaymentEvent[];
 }
 
 export interface CreateGroupBuyInput {
-  threadId: string;
-  guildId:  string;
-  ownerId:  string;
+	threadId: string;
+	guildId: string;
+	ownerId: string;
 }
 
 export interface AddKitInput {
-  groupBuyId:  string;
-  kitId:       string;
-  weightGrams: number;
-  quantity:    number;
+	groupBuyId: string;
+	kitId: string;
+	weightGrams: number;
+	quantity: number;
 }
 
 export interface SetFinancialsInput {
-  costPrice?:        number | null;
-  warehouseCost?:    number | null;
-  shippingCost?:     number | null;
-  shippingWeight?:   number | null;
-  customsCost?:      number | null;
-  inrConversionRate?:number | null;
+	costPrice?: number | null;
+	warehouseCost?: number | null;
+	shippingCost?: number | null;
+	shippingWeight?: number | null;
+	customsCost?: number | null;
+	inrConversionRate?: number | null;
 }
 
 export interface SetTrackingInput {
-  shippingTrackingNumber?: string | null;
-  shippingTrackingUrl?:    string | null;
-  customsTrackingUrl?:     string | null;
+	shippingTrackingNumber?: string | null;
+	shippingTrackingUrl?: string | null;
+	customsTrackingUrl?: string | null;
 }
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
-
-/**
- * Fetches all non-cancelled claims for a group buy, with their kit data.
- * This is the canonical "active claims" query used throughout the service.
- */
-async function fetchActiveClaims(groupBuyId: string) {
-  return prisma.groupBuyClaim.findMany({
-    where: {
-      groupBuyId,
-      status: { not: "CANCELLED" },
-    },
-    include: {
-      groupBuyKit: { include: { kit: true } },
-      paymentEvents: { orderBy: { createdAt: "asc" } },
-    },
-  });
+function fetchActiveClaims(groupBuyId: string) {
+	return prisma.groupBuyClaim.findMany({
+		where: {
+			groupBuyId,
+			status: { not: "CANCELLED" },
+		},
+		include: {
+			groupBuyKit: { include: { kit: true } },
+			paymentEvents: { orderBy: { createdAt: "asc" } },
+		},
+	});
 }
 
 /**
@@ -129,50 +115,54 @@ async function fetchActiveClaims(groupBuyId: string) {
  *   — denominator is sum of active claim weights, NOT GroupBuy.shippingWeight
  */
 async function recalculateAllClaims(gb: GroupBuy): Promise<void> {
-  const claims = await fetchActiveClaims(gb.id);
-  if (claims.length === 0) return;
+	const claims = await fetchActiveClaims(gb.id);
+	if (claims.length === 0) return;
 
-  // MSRP-based denominator (kit cost, warehouse, customs)
-  const totalMsrp = claims.reduce(
-    (sum, c) => sum + c.groupBuyKit.kit.jpy_price,
-    0,
-  );
+	// MSRP-based denominator (kit cost, warehouse, customs)
+	const totalMsrp = claims.reduce(
+		(sum, c) => sum + c.groupBuyKit.kit.jpy_price,
+		0,
+	);
 
-  // Weight-based denominator (shipping) — uses claim weights, not shippingWeight
-  const totalClaimWeight = claims.reduce(
-    (sum, c) => sum + c.groupBuyKit.weight_grams,
-    0,
-  );
+	// Weight-based denominator (shipping) — uses claim weights, not shippingWeight
+	const totalClaimWeight = claims.reduce(
+		(sum, c) => sum + c.groupBuyKit.weight_grams,
+		0,
+	);
 
-  await prisma.$transaction(
-    claims.map((claim) => {
-      const msrpProportion =
-        totalMsrp > 0 ? claim.groupBuyKit.kit.jpy_price / totalMsrp : 0;
+	await prisma.$transaction(
+		claims.map((claim) => {
+			const msrpProportion =
+				totalMsrp > 0 ? claim.groupBuyKit.kit.jpy_price / totalMsrp : 0;
 
-      const weightProportion =
-        totalClaimWeight > 0
-          ? claim.groupBuyKit.weight_grams / totalClaimWeight
-          : 0;
+			const weightProportion =
+				totalClaimWeight > 0
+					? claim.groupBuyKit.weight_grams / totalClaimWeight
+					: 0;
 
-      return prisma.groupBuyClaim.update({
-        where: { id: claim.id },
-        data: {
-          calculatedKitCost: gb.costPrice !== null
-            ? Math.round(msrpProportion * gb.costPrice!)
-            : null,
-          calculatedWarehouseCost: gb.warehouseCost !== null
-            ? Math.round(msrpProportion * gb.warehouseCost!)
-            : null,
-          calculatedShippingCost: gb.shippingCost !== null
-            ? Math.round(weightProportion * gb.shippingCost!)
-            : null,
-          calculatedCustomsCost: gb.customsCost !== null
-            ? Math.round(msrpProportion * gb.customsCost!)
-            : null,
-        },
-      });
-    }),
-  );
+			return prisma.groupBuyClaim.update({
+				where: { id: claim.id },
+				data: {
+					calculatedKitCost:
+						gb.costPrice !== null
+							? Math.round(msrpProportion * gb.costPrice!)
+							: null,
+					calculatedWarehouseCost:
+						gb.warehouseCost !== null
+							? Math.round(msrpProportion * gb.warehouseCost!)
+							: null,
+					calculatedShippingCost:
+						gb.shippingCost !== null
+							? Math.round(weightProportion * gb.shippingCost!)
+							: null,
+					calculatedCustomsCost:
+						gb.customsCost !== null
+							? Math.round(msrpProportion * gb.customsCost!)
+							: null,
+				},
+			});
+		}),
+	);
 }
 
 // ─── Group Buy CRUD ───────────────────────────────────────────────────────────
@@ -183,15 +173,15 @@ async function recalculateAllClaims(gb: GroupBuy): Promise<void> {
  * @throws If a group buy already exists for this threadId.
  */
 export async function createGroupBuy(
-  input: CreateGroupBuyInput,
+	input: CreateGroupBuyInput,
 ): Promise<GroupBuy> {
-  return prisma.groupBuy.create({
-    data: {
-      threadId: input.threadId,
-      guildId:  input.guildId,
-      ownerId:  input.ownerId,
-    },
-  });
+	return prisma.groupBuy.create({
+		data: {
+			threadId: input.threadId,
+			guildId: input.guildId,
+			ownerId: input.ownerId,
+		},
+	});
 }
 
 /**
@@ -201,62 +191,64 @@ export async function createGroupBuy(
  * @returns null if no group buy exists for this thread.
  */
 export async function getGroupBuyByThread(
-  threadId: string,
+	threadId: string,
 ): Promise<GroupBuyFull | null> {
-  return prisma.groupBuy.findUnique({
-    where: { threadId },
-    include: {
-      kits: {
-        include: {
-          kit: true,
-          claims: {
-            where: { status: { not: "CANCELLED" } },
-          },
-        },
-        orderBy: [{ kitId: "asc" }, { slotNumber: "asc" }],
-      },
-      claims: {
-        include: {
-          groupBuyKit: { include: { kit: true } },
-          paymentEvents: { orderBy: { createdAt: "asc" } },
-        },
-        orderBy: { createdAt: "asc" },
-      },
-    },
-  }) as GroupBuyFull | null;
+	return prisma.groupBuy.findUnique({
+		where: { threadId },
+		include: {
+			kits: {
+				include: {
+					kit: true,
+					claims: {
+						where: { status: { not: "CANCELLED" } },
+					},
+				},
+				orderBy: [{ kitId: "asc" }, { slotNumber: "asc" }],
+			},
+			claims: {
+				include: {
+					groupBuyKit: { include: { kit: true } },
+					paymentEvents: { orderBy: { createdAt: "asc" } },
+				},
+				orderBy: { createdAt: "asc" },
+			},
+		},
+	}) as GroupBuyFull | null;
 }
 
 /**
  * Retrieves a group buy by its internal UUID.
  */
 export async function getGroupBuyById(
-  id: string,
+	id: string,
 ): Promise<GroupBuyFull | null> {
-  return prisma.groupBuy.findUnique({
-    where: { id },
-    include: {
-      kits: {
-        include: { kit: true, claims: true },
-        orderBy: [{ kitId: "asc" }, { slotNumber: "asc" }],
-      },
-      claims: {
-        include: {
-          groupBuyKit: { include: { kit: true } },
-          paymentEvents: { orderBy: { createdAt: "asc" } },
-        },
-      },
-    },
-  }) as GroupBuyFull | null;
+	return prisma.groupBuy.findUnique({
+		where: { id },
+		include: {
+			kits: {
+				include: { kit: true, claims: true },
+				orderBy: [{ kitId: "asc" }, { slotNumber: "asc" }],
+			},
+			claims: {
+				include: {
+					groupBuyKit: { include: { kit: true } },
+					paymentEvents: { orderBy: { createdAt: "asc" } },
+				},
+			},
+		},
+	}) as GroupBuyFull | null;
 }
 
 /**
  * Returns all group buys in a guild, ordered newest-first.
  */
-export async function listGroupBuysByGuild(guildId: string): Promise<GroupBuy[]> {
-  return prisma.groupBuy.findMany({
-    where: { guildId },
-    orderBy: { createdAt: "desc" },
-  });
+export async function listGroupBuysByGuild(
+	guildId: string,
+): Promise<GroupBuy[]> {
+	return prisma.groupBuy.findMany({
+		where: { guildId },
+		orderBy: { createdAt: "desc" },
+	});
 }
 
 /**
@@ -265,40 +257,43 @@ export async function listGroupBuysByGuild(guildId: string): Promise<GroupBuy[]>
  * @returns The updated GroupBuy.
  */
 export async function setGroupBuyStatus(
-  id: string,
-  status: GroupBuyStatus,
+	id: string,
+	status: GroupBuyStatus,
 ): Promise<GroupBuy> {
-  return prisma.groupBuy.update({ where: { id }, data: { status } });
+	return prisma.groupBuy.update({ where: { id }, data: { status } });
 }
 
 /**
  * Sets the buyer (payment aggregator) for a group buy.
  */
 export async function setGroupBuyBuyer(
-  id: string,
-  buyerId: string,
+	id: string,
+	buyerId: string,
 ): Promise<GroupBuy> {
-  return prisma.groupBuy.update({ where: { id }, data: { buyerId } });
+	return prisma.groupBuy.update({ where: { id }, data: { buyerId } });
 }
 
 /**
  * Sets the receiver (parcel recipient) for a group buy.
  */
 export async function setGroupBuyReceiver(
-  id: string,
-  receiverId: string,
+	id: string,
+	receiverId: string,
 ): Promise<GroupBuy> {
-  return prisma.groupBuy.update({ where: { id }, data: { receiverId } });
+	return prisma.groupBuy.update({ where: { id }, data: { receiverId } });
 }
 
 /**
  * Transfers organiser ownership of a group buy to a new user.
  */
 export async function transferGroupBuyOwnership(
-  id: string,
-  newOwnerId: string,
+	id: string,
+	newOwnerId: string,
 ): Promise<GroupBuy> {
-  return prisma.groupBuy.update({ where: { id }, data: { ownerId: newOwnerId } });
+	return prisma.groupBuy.update({
+		where: { id },
+		data: { ownerId: newOwnerId },
+	});
 }
 
 // ─── Financials ───────────────────────────────────────────────────────────────
@@ -315,17 +310,17 @@ export async function transferGroupBuyOwnership(
  * @param fields - Partial financial update (only provided fields are changed).
  */
 export async function updateFinancials(
-  id: string,
-  fields: SetFinancialsInput,
+	id: string,
+	fields: SetFinancialsInput,
 ): Promise<GroupBuy> {
-  // Strip undefined keys so Prisma doesn't null them out unintentionally
-  const data = Object.fromEntries(
-    Object.entries(fields).filter(([, v]) => v !== undefined),
-  );
+	// Strip undefined keys so Prisma doesn't null them out unintentionally
+	const data = Object.fromEntries(
+		Object.entries(fields).filter(([, v]) => v !== undefined),
+	);
 
-  const gb = await prisma.groupBuy.update({ where: { id }, data });
-  await recalculateAllClaims(gb);
-  return gb;
+	const gb = await prisma.groupBuy.update({ where: { id }, data });
+	await recalculateAllClaims(gb);
+	return gb;
 }
 
 /**
@@ -333,13 +328,13 @@ export async function updateFinancials(
  * Does not trigger claim recalculation (tracking is display-only).
  */
 export async function updateTracking(
-  id: string,
-  fields: SetTrackingInput,
+	id: string,
+	fields: SetTrackingInput,
 ): Promise<GroupBuy> {
-  const data = Object.fromEntries(
-    Object.entries(fields).filter(([, v]) => v !== undefined),
-  );
-  return prisma.groupBuy.update({ where: { id }, data });
+	const data = Object.fromEntries(
+		Object.entries(fields).filter(([, v]) => v !== undefined),
+	);
+	return prisma.groupBuy.update({ where: { id }, data });
 }
 
 // ─── Kit slots ────────────────────────────────────────────────────────────────
@@ -355,44 +350,44 @@ export async function updateTracking(
  * @returns The newly created GroupBuyKit rows.
  */
 export async function addKitToGroupBuy(
-  input: AddKitInput,
+	input: AddKitInput,
 ): Promise<GroupBuyKit[]> {
-  const { groupBuyId, kitId, weightGrams, quantity } = input;
+	const { groupBuyId, kitId, weightGrams, quantity } = input;
 
-  // Find next slot number for this kit in this GB
-  const lastSlot = await prisma.groupBuyKit.findFirst({
-    where: { groupBuyId, kitId },
-    orderBy: { slotNumber: "desc" },
-    select: { slotNumber: true },
-  });
-  const nextSlot = (lastSlot?.slotNumber ?? 0) + 1;
+	// Find next slot number for this kit in this GB
+	const lastSlot = await prisma.groupBuyKit.findFirst({
+		where: { groupBuyId, kitId },
+		orderBy: { slotNumber: "desc" },
+		select: { slotNumber: true },
+	});
+	const nextSlot = (lastSlot?.slotNumber ?? 0) + 1;
 
-  await prisma.groupBuyKit.createMany({
-    data: Array.from({ length: quantity }, (_, i) => ({
-      groupBuyId,
-      kitId,
-      weight_grams: weightGrams,
-      slotNumber: nextSlot + i,
-    })),
-  });
+	await prisma.groupBuyKit.createMany({
+		data: Array.from({ length: quantity }, (_, i) => ({
+			groupBuyId,
+			kitId,
+			weight_grams: weightGrams,
+			slotNumber: nextSlot + i,
+		})),
+	});
 
-  // Recompute total weight
-  const allSlots = await prisma.groupBuyKit.findMany({ where: { groupBuyId } });
-  const totalWeight = allSlots.reduce((sum, s) => sum + s.weight_grams, 0);
-  const gb = await prisma.groupBuy.update({
-    where: { id: groupBuyId },
-    data: { totalWeight },
-  });
+	// Recompute total weight
+	const allSlots = await prisma.groupBuyKit.findMany({ where: { groupBuyId } });
+	const totalWeight = allSlots.reduce((sum, s) => sum + s.weight_grams, 0);
+	const gb = await prisma.groupBuy.update({
+		where: { id: groupBuyId },
+		data: { totalWeight },
+	});
 
-  // Recalculate if financials exist
-  if (gb.costPrice || gb.shippingCost || gb.customsCost || gb.warehouseCost) {
-    await recalculateAllClaims(gb);
-  }
+	// Recalculate if financials exist
+	if (gb.costPrice || gb.shippingCost || gb.customsCost || gb.warehouseCost) {
+		await recalculateAllClaims(gb);
+	}
 
-  return prisma.groupBuyKit.findMany({
-    where: { groupBuyId, kitId, slotNumber: { gte: nextSlot } },
-    orderBy: { slotNumber: "asc" },
-  });
+	return prisma.groupBuyKit.findMany({
+		where: { groupBuyId, kitId, slotNumber: { gte: nextSlot } },
+		orderBy: { slotNumber: "asc" },
+	});
 }
 
 /**
@@ -406,45 +401,47 @@ export async function addKitToGroupBuy(
  * @throws  If fewer unclaimed slots exist than requested.
  */
 export async function removeKitFromGroupBuy(
-  groupBuyId: string,
-  kitId: string,
-  quantity = 1,
+	groupBuyId: string,
+	kitId: string,
+	quantity = 1,
 ): Promise<{ removed: number; totalWeight: number; kitName: string }> {
-  // Find unclaimed slots — slots where no non-cancelled claim exists
-  const unclaimed = await prisma.groupBuyKit.findMany({
-    where: {
-      groupBuyId,
-      kitId, // ← This is Kit.id (UUID), NOT GroupBuyKit.id
-      claims: { none: { status: { not: "CANCELLED" } } },
-    },
-    include: { kit: true },
-    take: quantity,
-  });
+	// Find unclaimed slots — slots where no non-cancelled claim exists
+	const unclaimed = await prisma.groupBuyKit.findMany({
+		where: {
+			groupBuyId,
+			kitId, // ← This is Kit.id (UUID), NOT GroupBuyKit.id
+			claims: { none: { status: { not: "CANCELLED" } } },
+		},
+		include: { kit: true },
+		take: quantity,
+	});
 
-  if (unclaimed.length < quantity) {
-    const total = await prisma.groupBuyKit.count({ where: { groupBuyId, kitId } });
-    throw new Error(
-      `Only ${unclaimed.length} of ${total} slot(s) are unclaimed — cannot remove ${quantity}.`,
-    );
-  }
+	if (unclaimed.length < quantity) {
+		const total = await prisma.groupBuyKit.count({
+			where: { groupBuyId, kitId },
+		});
+		throw new Error(
+			`Only ${unclaimed.length} of ${total} slot(s) are unclaimed — cannot remove ${quantity}.`,
+		);
+	}
 
-  const kitName = unclaimed[0].kit.product_name;
-  await prisma.groupBuyKit.deleteMany({
-    where: { id: { in: unclaimed.map((s) => s.id) } },
-  });
+	const kitName = unclaimed[0].kit.product_name;
+	await prisma.groupBuyKit.deleteMany({
+		where: { id: { in: unclaimed.map((s) => s.id) } },
+	});
 
-  const allSlots = await prisma.groupBuyKit.findMany({ where: { groupBuyId } });
-  const totalWeight = allSlots.reduce((sum, s) => sum + s.weight_grams, 0);
-  const gb = await prisma.groupBuy.update({
-    where: { id: groupBuyId },
-    data: { totalWeight },
-  });
+	const allSlots = await prisma.groupBuyKit.findMany({ where: { groupBuyId } });
+	const totalWeight = allSlots.reduce((sum, s) => sum + s.weight_grams, 0);
+	const gb = await prisma.groupBuy.update({
+		where: { id: groupBuyId },
+		data: { totalWeight },
+	});
 
-  if (gb.costPrice || gb.shippingCost || gb.customsCost || gb.warehouseCost) {
-    await recalculateAllClaims(gb);
-  }
+	if (gb.costPrice || gb.shippingCost || gb.customsCost || gb.warehouseCost) {
+		await recalculateAllClaims(gb);
+	}
 
-  return { removed: unclaimed.length, totalWeight, kitName };
+	return { removed: unclaimed.length, totalWeight, kitName };
 }
 
 /**
@@ -453,23 +450,23 @@ export async function removeKitFromGroupBuy(
  * Value is Kit.id (NOT GroupBuyKit.id) — this is what removeKitFromGroupBuy expects.
  */
 export async function getRemovableKitsForGroupBuy(
-  threadId: string,
-  query: string,
+	threadId: string,
+	query: string,
 ): Promise<{ name: string; value: string }[]> {
-  const slots = await prisma.groupBuyKit.findMany({
-    where: {
-      groupBuy: { threadId },
-      kit: kitNameFilter(query),
-    },
-    include: { kit: true },
-    take: 5,
-  });
+	const slots = await prisma.groupBuyKit.findMany({
+		where: {
+			groupBuy: { threadId },
+			kit: kitNameFilter(query),
+		},
+		include: { kit: true },
+		take: 5,
+	});
 
-  // Deduplicate by Kit.id — return the Kit.id as the value
-  const seen = new Set<string>();
-  return slots
-    .filter((s) => !seen.has(s.kitId) && seen.add(s.kitId))
-    .map((s) => ({ name: s.kit.product_name, value: s.kitId }));
+	// Deduplicate by Kit.id — return the Kit.id as the value
+	const seen = new Set<string>();
+	return slots
+		.filter((s) => !seen.has(s.kitId) && seen.add(s.kitId))
+		.map((s) => ({ name: s.kit.product_name, value: s.kitId }));
 }
 
 // ─── Claims ───────────────────────────────────────────────────────────────────
@@ -488,52 +485,55 @@ export async function getRemovableKitsForGroupBuy(
  *          active claim for any slot of this kit.
  */
 export async function claimKit(
-  groupBuyId: string,
-  kitId: string,
-  userId: string,
+	groupBuyId: string,
+	kitId: string,
+	userId: string,
 ): Promise<GroupBuyClaim> {
-  // Duplicate protection: one claim per user per kit (across all slots)
-  const existing = await prisma.groupBuyClaim.findFirst({
-    where: {
-      groupBuyId,
-      userId,
-      status: { not: "CANCELLED" },
-      groupBuyKit: { kitId },
-    },
-  });
-  if (existing) {
-    throw new Error("You already have an active claim for this kit.");
-  }
+	// Duplicate protection: one claim per user per kit (across all slots)
+	const existing = await prisma.groupBuyClaim.findFirst({
+		where: {
+			groupBuyId,
+			userId,
+			status: { not: "CANCELLED" },
+			groupBuyKit: { kitId },
+		},
+	});
+	if (existing) {
+		throw new Error("You already have an active claim for this kit.");
+	}
 
-  // Load all slots for this kit with their active claim counts
-  const slots = await prisma.groupBuyKit.findMany({
-    where: { groupBuyId, kitId },
-    include: {
-      claims: { where: { status: { not: "CANCELLED" } } },
-    },
-    orderBy: { slotNumber: "asc" },
-  });
+	// Load all slots for this kit with their active claim counts
+	const slots = await prisma.groupBuyKit.findMany({
+		where: { groupBuyId, kitId },
+		include: {
+			claims: { where: { status: { not: "CANCELLED" } } },
+		},
+		orderBy: { slotNumber: "asc" },
+	});
 
-  if (slots.length === 0) {
-    throw new Error("This kit has no slots in the group buy.");
-  }
+	if (slots.length === 0) {
+		throw new Error("This kit has no slots in the group buy.");
+	}
 
-  // Assign to slot with fewest pending claims; slotNumber tie-breaks
-  const bestSlot = slots.reduce((best, slot) =>
-    slot.claims.length < best.claims.length ? slot : best,
-  );
+	// Assign to slot with fewest pending claims; slotNumber tie-breaks
+	const bestSlot = slots.reduce((best, slot) =>
+		slot.claims.length < best.claims.length ? slot : best,
+	);
 
-  const claim = await prisma.groupBuyClaim.create({
-    data: { groupBuyId, groupBuyKitId: bestSlot.id, userId },
-  });
+	const claim = await prisma.groupBuyClaim.create({
+		data: { groupBuyId, groupBuyKitId: bestSlot.id, userId },
+	});
 
-  // Recalculate ALL claims (including this new one) so proportions are consistent
-  const gb = await prisma.groupBuy.findUnique({ where: { id: groupBuyId } });
-  if (gb && (gb.costPrice || gb.shippingCost || gb.customsCost || gb.warehouseCost)) {
-    await recalculateAllClaims(gb);
-  }
+	// Recalculate ALL claims (including this new one) so proportions are consistent
+	const gb = await prisma.groupBuy.findUnique({ where: { id: groupBuyId } });
+	if (
+		gb &&
+		(gb.costPrice || gb.shippingCost || gb.customsCost || gb.warehouseCost)
+	) {
+		await recalculateAllClaims(gb);
+	}
 
-  return claim;
+	return claim;
 }
 
 /**
@@ -544,27 +544,32 @@ export async function claimKit(
  * @param actorId   - Discord user ID performing the cancellation (for auth checks in caller).
  */
 export async function cancelClaim(claimId: string): Promise<GroupBuyClaim> {
-  const claim = await prisma.groupBuyClaim.update({
-    where: { id: claimId },
-    data: { status: "CANCELLED" },
-  });
+	const claim = await prisma.groupBuyClaim.update({
+		where: { id: claimId },
+		data: { status: "CANCELLED" },
+	});
 
-  const gb = await prisma.groupBuy.findUnique({ where: { id: claim.groupBuyId } });
-  if (gb && (gb.costPrice || gb.shippingCost || gb.customsCost || gb.warehouseCost)) {
-    await recalculateAllClaims(gb);
-  }
+	const gb = await prisma.groupBuy.findUnique({
+		where: { id: claim.groupBuyId },
+	});
+	if (
+		gb &&
+		(gb.costPrice || gb.shippingCost || gb.customsCost || gb.warehouseCost)
+	) {
+		await recalculateAllClaims(gb);
+	}
 
-  return claim;
+	return claim;
 }
 
 /**
  * Confirms a pending claim (organiser action).
  */
 export async function confirmClaim(claimId: string): Promise<GroupBuyClaim> {
-  return prisma.groupBuyClaim.update({
-    where: { id: claimId },
-    data: { status: "CONFIRMED" },
-  });
+	return prisma.groupBuyClaim.update({
+		where: { id: claimId },
+		data: { status: "CONFIRMED" },
+	});
 }
 
 /**
@@ -573,26 +578,28 @@ export async function confirmClaim(claimId: string): Promise<GroupBuyClaim> {
  *
  * @returns Number of claims confirmed.
  */
-export async function confirmUncontestedClaims(groupBuyId: string): Promise<number> {
-  const kits = await prisma.groupBuyKit.findMany({
-    where: { groupBuyId },
-    include: {
-      claims: { where: { status: { not: "CANCELLED" } } },
-    },
-  });
+export async function confirmUncontestedClaims(
+	groupBuyId: string,
+): Promise<number> {
+	const kits = await prisma.groupBuyKit.findMany({
+		where: { groupBuyId },
+		include: {
+			claims: { where: { status: { not: "CANCELLED" } } },
+		},
+	});
 
-  const uncontested = kits
-    .filter((k) => k.claims.length === 1 && k.claims[0].status === "PENDING")
-    .map((k) => k.claims[0].id);
+	const uncontested = kits
+		.filter((k) => k.claims.length === 1 && k.claims[0].status === "PENDING")
+		.map((k) => k.claims[0].id);
 
-  if (uncontested.length === 0) return 0;
+	if (uncontested.length === 0) return 0;
 
-  await prisma.groupBuyClaim.updateMany({
-    where: { id: { in: uncontested } },
-    data: { status: "CONFIRMED" },
-  });
+	await prisma.groupBuyClaim.updateMany({
+		where: { id: { in: uncontested } },
+		data: { status: "CONFIRMED" },
+	});
 
-  return uncontested.length;
+	return uncontested.length;
 }
 
 /**
@@ -603,23 +610,23 @@ export async function confirmUncontestedClaims(groupBuyId: string): Promise<numb
  * @param winnerClaimId    - The claim UUID to confirm.
  */
 export async function resolveContestedSlot(
-  groupBuyKitId: string,
-  winnerClaimId: string,
+	groupBuyKitId: string,
+	winnerClaimId: string,
 ): Promise<void> {
-  await prisma.$transaction([
-    prisma.groupBuyClaim.update({
-      where: { id: winnerClaimId },
-      data: { status: "CONFIRMED" },
-    }),
-    prisma.groupBuyClaim.updateMany({
-      where: {
-        groupBuyKitId,
-        id: { not: winnerClaimId },
-        status: { not: "CANCELLED" },
-      },
-      data: { status: "CANCELLED" },
-    }),
-  ]);
+	await prisma.$transaction([
+		prisma.groupBuyClaim.update({
+			where: { id: winnerClaimId },
+			data: { status: "CONFIRMED" },
+		}),
+		prisma.groupBuyClaim.updateMany({
+			where: {
+				groupBuyKitId,
+				id: { not: winnerClaimId },
+				status: { not: "CANCELLED" },
+			},
+			data: { status: "CANCELLED" },
+		}),
+	]);
 }
 
 /**
@@ -631,34 +638,34 @@ export async function resolveContestedSlot(
  * @param newUserId - Discord user ID of the new claimant.
  */
 export async function transferClaim(
-  claimId: string,
-  newUserId: string,
+	claimId: string,
+	newUserId: string,
 ): Promise<GroupBuyClaim> {
-  const claim = await prisma.groupBuyClaim.findUnique({
-    where: { id: claimId },
-    include: { groupBuyKit: { include: { kit: true } } },
-  });
-  if (!claim) throw new Error("Claim not found.");
+	const claim = await prisma.groupBuyClaim.findUnique({
+		where: { id: claimId },
+		include: { groupBuyKit: { include: { kit: true } } },
+	});
+	if (!claim) throw new Error("Claim not found.");
 
-  // Duplicate protection on the transfer target
-  const conflict = await prisma.groupBuyClaim.findFirst({
-    where: {
-      groupBuyKitId: claim.groupBuyKitId,
-      userId: newUserId,
-      status: { not: "CANCELLED" },
-      id: { not: claimId },
-    },
-  });
-  if (conflict) {
-    throw new Error(
-      `User already has an active claim for ${claim.groupBuyKit.kit.product_name}.`,
-    );
-  }
+	// Duplicate protection on the transfer target
+	const conflict = await prisma.groupBuyClaim.findFirst({
+		where: {
+			groupBuyKitId: claim.groupBuyKitId,
+			userId: newUserId,
+			status: { not: "CANCELLED" },
+			id: { not: claimId },
+		},
+	});
+	if (conflict) {
+		throw new Error(
+			`User already has an active claim for ${claim.groupBuyKit.kit.product_name}.`,
+		);
+	}
 
-  return prisma.groupBuyClaim.update({
-    where: { id: claimId },
-    data: { userId: newUserId },
-  });
+	return prisma.groupBuyClaim.update({
+		where: { id: claimId },
+		data: { userId: newUserId },
+	});
 }
 
 /**
@@ -679,38 +686,38 @@ export async function transferClaim(
  * @param note          - Optional note (e.g. UTR reference).
  */
 export async function confirmPaymentStage(
-  claimId: string,
-  actorId: string,
-  stage: PaymentStage,
-  note?: string,
+	claimId: string,
+	actorId: string,
+	stage: PaymentStage,
+	note?: string,
 ): Promise<{ claim: GroupBuyClaim; event: ClaimPaymentEvent }> {
-  const stageToStatus: Record<string, ClaimStatus> = {
-    KIT:      "KIT_PAID",
-    WAREHOUSE:"WAREHOUSE_PAID",
-    SHIPPING: "SHIPPING_PAID",
-    CUSTOMS:  "CUSTOMS_PAID",
-  };
+	const stageToStatus: Record<string, ClaimStatus> = {
+		KIT: "KIT_PAID",
+		WAREHOUSE: "WAREHOUSE_PAID",
+		SHIPPING: "SHIPPING_PAID",
+		CUSTOMS: "CUSTOMS_PAID",
+	};
 
-  const newStatus = stageToStatus[stage];
-  if (!newStatus) throw new Error(`Unknown payment stage: ${stage}`);
+	const newStatus = stageToStatus[stage];
+	if (!newStatus) throw new Error(`Unknown payment stage: ${stage}`);
 
-  const [claim, event] = await prisma.$transaction([
-    prisma.groupBuyClaim.update({
-      where: { id: claimId },
-      data: { status: newStatus },
-    }),
-    prisma.claimPaymentEvent.create({
-      data: {
-        claimId,
-        stage,
-        action: "CONFIRMED",
-        actorId,
-        note: note ?? null,
-      },
-    }),
-  ]);
+	const [claim, event] = await prisma.$transaction([
+		prisma.groupBuyClaim.update({
+			where: { id: claimId },
+			data: { status: newStatus },
+		}),
+		prisma.claimPaymentEvent.create({
+			data: {
+				claimId,
+				stage,
+				action: "CONFIRMED",
+				actorId,
+				note: note ?? null,
+			},
+		}),
+	]);
 
-  return { claim, event };
+	return { claim, event };
 }
 
 /**
@@ -724,20 +731,20 @@ export async function confirmPaymentStage(
  * @param note    - Optional note (e.g. UTR number, screenshot reference).
  */
 export async function reportPayment(
-  claimId: string,
-  actorId: string,
-  stage: PaymentStage,
-  note?: string,
+	claimId: string,
+	actorId: string,
+	stage: PaymentStage,
+	note?: string,
 ): Promise<ClaimPaymentEvent> {
-  return prisma.claimPaymentEvent.create({
-    data: {
-      claimId,
-      stage,
-      action: "REPORTED",
-      actorId,
-      note: note ?? null,
-    },
-  });
+	return prisma.claimPaymentEvent.create({
+		data: {
+			claimId,
+			stage,
+			action: "REPORTED",
+			actorId,
+			note: note ?? null,
+		},
+	});
 }
 
 /**
@@ -746,20 +753,20 @@ export async function reportPayment(
  * must re-report.
  */
 export async function rejectPaymentReport(
-  claimId: string,
-  actorId: string,
-  stage: PaymentStage,
-  note?: string,
+	claimId: string,
+	actorId: string,
+	stage: PaymentStage,
+	note?: string,
 ): Promise<ClaimPaymentEvent> {
-  return prisma.claimPaymentEvent.create({
-    data: {
-      claimId,
-      stage,
-      action: "REJECTED",
-      actorId,
-      note: note ?? null,
-    },
-  });
+	return prisma.claimPaymentEvent.create({
+		data: {
+			claimId,
+			stage,
+			action: "REJECTED",
+			actorId,
+			note: note ?? null,
+		},
+	});
 }
 
 /**
@@ -768,10 +775,10 @@ export async function rejectPaymentReport(
  * customs cost is set on the group buy).
  */
 export async function markPaidInFull(claimId: string): Promise<GroupBuyClaim> {
-  return prisma.groupBuyClaim.update({
-    where: { id: claimId },
-    data: { status: "PAID_IN_FULL" },
-  });
+	return prisma.groupBuyClaim.update({
+		where: { id: claimId },
+		data: { status: "PAID_IN_FULL" },
+	});
 }
 
 // ─── Read / reporting ─────────────────────────────────────────────────────────
@@ -783,36 +790,36 @@ export async function markPaidInFull(claimId: string): Promise<GroupBuyClaim> {
  * This powers both /gb summary (Discord) and GET /groupbuys/:id/summary (API).
  */
 export async function getGroupBuySummary(
-  groupBuyId: string,
+	groupBuyId: string,
 ): Promise<ClaimCostBreakdown[]> {
-  const claims = await fetchActiveClaims(groupBuyId);
+	const claims = await fetchActiveClaims(groupBuyId);
 
-  return claims
-    .sort((a, b) => {
-      if (a.userId < b.userId) return -1;
-      if (a.userId > b.userId) return 1;
-      return a.groupBuyKit.slotNumber - b.groupBuyKit.slotNumber;
-    })
-    .map((c) => {
-      const kit = c.calculatedKitCost ?? 0;
-      const wh  = c.calculatedWarehouseCost ?? 0;
-      const sh  = c.calculatedShippingCost ?? 0;
-      const cu  = c.calculatedCustomsCost ?? 0;
+	return claims
+		.sort((a, b) => {
+			if (a.userId < b.userId) return -1;
+			if (a.userId > b.userId) return 1;
+			return a.groupBuyKit.slotNumber - b.groupBuyKit.slotNumber;
+		})
+		.map((c) => {
+			const kit = c.calculatedKitCost ?? 0;
+			const wh = c.calculatedWarehouseCost ?? 0;
+			const sh = c.calculatedShippingCost ?? 0;
+			const cu = c.calculatedCustomsCost ?? 0;
 
-      return {
-        claimId:                 c.id,
-        userId:                  c.userId,
-        kitName:                 c.groupBuyKit.kit.product_name,
-        slotNumber:              c.groupBuyKit.slotNumber,
-        status:                  c.status,
-        calculatedKitCost:       c.calculatedKitCost,
-        calculatedWarehouseCost: c.calculatedWarehouseCost,
-        calculatedShippingCost:  c.calculatedShippingCost,
-        calculatedCustomsCost:   c.calculatedCustomsCost,
-        totalJpy:                kit + wh + sh + cu,
-        paymentEvents:           c.paymentEvents,
-      };
-    });
+			return {
+				claimId: c.id,
+				userId: c.userId,
+				kitName: c.groupBuyKit.kit.product_name,
+				slotNumber: c.groupBuyKit.slotNumber,
+				status: c.status,
+				calculatedKitCost: c.calculatedKitCost,
+				calculatedWarehouseCost: c.calculatedWarehouseCost,
+				calculatedShippingCost: c.calculatedShippingCost,
+				calculatedCustomsCost: c.calculatedCustomsCost,
+				totalJpy: kit + wh + sh + cu,
+				paymentEvents: c.paymentEvents,
+			};
+		});
 }
 
 /**
@@ -820,20 +827,22 @@ export async function getGroupBuySummary(
  * Used by /gb claims view (member's own view) and GET /groupbuys/:id/claims?userId=.
  */
 export async function getUserClaimsInGroupBuy(
-  groupBuyId: string,
-  userId: string,
-): Promise<(GroupBuyClaim & {
-  groupBuyKit: GroupBuyKit & { kit: Kit };
-  paymentEvents: ClaimPaymentEvent[];
-})[]> {
-  return prisma.groupBuyClaim.findMany({
-    where: { groupBuyId, userId, status: { not: "CANCELLED" } },
-    include: {
-      groupBuyKit: { include: { kit: true } },
-      paymentEvents: { orderBy: { createdAt: "asc" } },
-    },
-    orderBy: { createdAt: "asc" },
-  }) as any;
+	groupBuyId: string,
+	userId: string,
+): Promise<
+	(GroupBuyClaim & {
+		groupBuyKit: GroupBuyKit & { kit: Kit };
+		paymentEvents: ClaimPaymentEvent[];
+	})[]
+> {
+	return prisma.groupBuyClaim.findMany({
+		where: { groupBuyId, userId, status: { not: "CANCELLED" } },
+		include: {
+			groupBuyKit: { include: { kit: true } },
+			paymentEvents: { orderBy: { createdAt: "asc" } },
+		},
+		orderBy: { createdAt: "asc" },
+	}) as any;
 }
 
 /**
@@ -841,17 +850,17 @@ export async function getUserClaimsInGroupBuy(
  * Used by /gb claims manage to identify contested vs uncontested vs unclaimed slots.
  */
 export async function getSlotsWithClaimCounts(groupBuyId: string) {
-  return prisma.groupBuyKit.findMany({
-    where: { groupBuyId },
-    include: {
-      kit: true,
-      claims: {
-        where: { status: { not: "CANCELLED" } },
-        include: { paymentEvents: true },
-      },
-    },
-    orderBy: [{ kitId: "asc" }, { slotNumber: "asc" }],
-  });
+	return prisma.groupBuyKit.findMany({
+		where: { groupBuyId },
+		include: {
+			kit: true,
+			claims: {
+				where: { status: { not: "CANCELLED" } },
+				include: { paymentEvents: true },
+			},
+		},
+		orderBy: [{ kitId: "asc" }, { slotNumber: "asc" }],
+	});
 }
 
 /**
@@ -861,71 +870,80 @@ export async function getSlotsWithClaimCounts(groupBuyId: string) {
  * Result includes pending claim count vs total slots per kit for UX display.
  */
 export async function getClaimableKitsForUser(
-  threadId: string,
-  userId: string,
-  query: string,
+	threadId: string,
+	userId: string,
+	query: string,
 ): Promise<{ name: string; value: string }[]> {
-  // Kits the user already has an active claim for (exclude whole kit)
-  const alreadyClaimed = await prisma.groupBuyClaim.findMany({
-    where: {
-      groupBuy: { threadId },
-      userId,
-      status: { not: "CANCELLED" },
-    },
-    include: { groupBuyKit: { select: { kitId: true } } },
-  });
-  const excludedKitIds = alreadyClaimed.map((c) => c.groupBuyKit.kitId);
+	// Kits the user already has an active claim for (exclude whole kit)
+	const alreadyClaimed = await prisma.groupBuyClaim.findMany({
+		where: {
+			groupBuy: { threadId },
+			userId,
+			status: { not: "CANCELLED" },
+		},
+		include: { groupBuyKit: { select: { kitId: true } } },
+	});
+	const excludedKitIds = alreadyClaimed.map((c) => c.groupBuyKit.kitId);
 
-  const slots = await prisma.groupBuyKit.findMany({
-    where: {
-      groupBuy: { threadId },
-      kit: kitNameFilter(query),
-      kitId: { notIn: excludedKitIds },
-    },
-    include: {
-      kit: true,
-      claims: { where: { status: { not: "CANCELLED" } } },
-    },
-  });
+	const slots = await prisma.groupBuyKit.findMany({
+		where: {
+			groupBuy: { threadId },
+			kit: kitNameFilter(query),
+			kitId: { notIn: excludedKitIds },
+		},
+		include: {
+			kit: true,
+			claims: { where: { status: { not: "CANCELLED" } } },
+		},
+	});
 
-  // Aggregate by kitId
-  const byKit = new Map<string, { name: string; total: number; pending: number }>();
-  for (const slot of slots) {
-    const entry = byKit.get(slot.kitId) ?? { name: slot.kit.product_name, total: 0, pending: 0 };
-    entry.total++;
-    entry.pending += slot.claims.length;
-    byKit.set(slot.kitId, entry);
-  }
+	// Aggregate by kitId
+	const byKit = new Map<
+		string,
+		{ name: string; total: number; pending: number }
+	>();
+	for (const slot of slots) {
+		const entry = byKit.get(slot.kitId) ?? {
+			name: slot.kit.product_name,
+			total: 0,
+			pending: 0,
+		};
+		entry.total++;
+		entry.pending += slot.claims.length;
+		byKit.set(slot.kitId, entry);
+	}
 
-  return [...byKit.entries()].slice(0, 5).map(([kitId, { name, total, pending }]) => ({
-    name: `${name} (${pending} claimed / ${total} slot${total !== 1 ? "s" : ""})`,
-    value: kitId,
-  }));
+	return [...byKit.entries()]
+		.slice(0, 5)
+		.map(([kitId, { name, total, pending }]) => ({
+			name: `${name} (${pending} claimed / ${total} slot${total !== 1 ? "s" : ""})`,
+			value: kitId,
+		}));
 }
 
 /**
  * Returns autocomplete options for a user's active claims (for /gb claims unclaim).
  */
 export async function getUserClaimOptions(
-  threadId: string,
-  userId: string,
-  query: string,
+	threadId: string,
+	userId: string,
+	query: string,
 ): Promise<{ name: string; value: string }[]> {
-  const results = await prisma.groupBuyClaim.findMany({
-    where: {
-      groupBuy: { threadId },
-      userId,
-      status: { not: "CANCELLED" },
-      groupBuyKit: { kit: kitNameFilter(query) },
-    },
-    include: { groupBuyKit: { include: { kit: true } } },
-    take: 5,
-  });
+	const results = await prisma.groupBuyClaim.findMany({
+		where: {
+			groupBuy: { threadId },
+			userId,
+			status: { not: "CANCELLED" },
+			groupBuyKit: { kit: kitNameFilter(query) },
+		},
+		include: { groupBuyKit: { include: { kit: true } } },
+		take: 5,
+	});
 
-  return results.map((c) => ({
-    name: `${c.groupBuyKit.kit.product_name} — ${CLAIM_STATUS_LABEL[c.status] ?? c.status}`,
-    value: c.id,
-  }));
+	return results.map((c) => ({
+		name: `${c.groupBuyKit.kit.product_name} — ${CLAIM_STATUS_LABEL[c.status] ?? c.status}`,
+		value: c.id,
+	}));
 }
 
 /**
@@ -935,25 +953,23 @@ export async function getUserClaimOptions(
  * Value is claim.id (NOT groupBuyKit.id or kit.id).
  */
 export async function getAllClaimOptions(
-  threadId: string,
-  query: string,
+	threadId: string,
+	query: string,
 ): Promise<{ name: string; value: string }[]> {
-  const results = await prisma.groupBuyClaim.findMany({
-    where: {
-      groupBuy: { threadId },
-      status: { not: "CANCELLED" },
-      groupBuyKit: { kit: kitNameFilter(query) },
-    },
-    include: { groupBuyKit: { include: { kit: true } } },
-    take: 5,
-  });
+	const results = await prisma.groupBuyClaim.findMany({
+		where: {
+			groupBuy: { threadId },
+			status: { not: "CANCELLED" },
+			groupBuyKit: { kit: kitNameFilter(query) },
+		},
+		include: { groupBuyKit: { include: { kit: true } } },
+		take: 5,
+	});
 
-  // BUG FIX: value is claim.id — previously this incorrectly returned
-  // groupBuyKit.id which caused transferClaim to look up the wrong record.
-  return results.map((c) => ({
-    name: `${c.groupBuyKit.kit.product_name} — <@${c.userId}>`,
-    value: c.id,
-  }));
+	// BUG FIX: value is claim.id — previously this incorrectly returned
+	// groupBuyKit.id which caused transferClaim to look up the wrong record.
+	return results.map((c) => ({
+		name: `${c.groupBuyKit.kit.product_name} — <@${c.userId}>`,
+		value: c.id,
+	}));
 }
-
-
