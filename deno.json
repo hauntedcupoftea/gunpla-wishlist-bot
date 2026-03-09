@@ -10,6 +10,7 @@
     "@prisma/client": "npm:@prisma/client@^7.4.1",
     "@prisma/config": "npm:@prisma/config@^7.4.1",
     "@prisma/adapter-pg": "npm:@prisma/adapter-pg@^7.4.1",
+    "@std/assert": "jsr:@std/assert@^1.0.19",
     "@std/dotenv": "jsr:@std/dotenv@^0.225.6",
     "pg": "npm:pg@^8.11.0",
     "axios": "npm:axios@^1.13.5",
@@ -26,12 +27,17 @@
   "tasks": {
     "dev": "deno run --watch --env -A src/index.ts",
     "start": "deno run --env -A src/index.ts",
-    "scrape": "deno run --env -A src/commands/util/scrape-hlj.ts",
+    "scrape": "deno run --env -A scripts/scrape-hlj.ts",
     "db:generate": "deno run --env -A npm:prisma generate",
     "db:push": "deno run --env -A npm:prisma db push",
     "db:seed": "deno run --env -A ./prisma/seed.ts",
     "db:migrate:dev": "deno run --env -A npm:prisma migrate dev",
     "db:migrate:deploy": "deno run --env -A npm:prisma migrate deploy",
-    "db:sync": "diff prisma/schema.sqlite.prisma prisma/schema.postgresql.prisma | grep -v '^[0-9]' | grep -v 'provider'"
+    "db:sync": "diff prisma/schema.sqlite.prisma prisma/schema.postgresql.prisma | grep -v '^[0-9]' | grep -v 'provider'",
+    "test": "deno test --allow-env tests/",
+    "test:unit": "deno test tests/lib/",
+    "test:service": "deno test --allow-env tests/services/",
+    "test:bot": "deno test tests/bot/",
+    "test:watch": "deno test --allow-env --watch tests/"
   }
 }

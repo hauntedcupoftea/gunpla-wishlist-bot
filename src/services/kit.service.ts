@@ -6,20 +6,20 @@
  * entities — route all reads and writes through this service.
  */
 
-import type { Kit, Wishlist } from "../../generated/models.ts";
+import type { Kit, Wishlist } from "../../generated/client.ts";
 import { prisma } from "../lib/prisma.ts";
 import { kitNameFilter } from "../lib/util.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CreateKitInput {
-  product_name: string;
-  jpy_price: number;
-  weight_grams?: number;
-  availability: string;
-  item_code?: string;
-  release_date?: string | null;
-  stock_status?: string | null;
+	product_name: string;
+	jpy_price: number;
+	weight_grams?: number;
+	availability: string;
+	item_code?: string;
+	release_date?: string | null;
+	stock_status?: string | null;
 }
 
 /**
@@ -28,15 +28,15 @@ export interface CreateKitInput {
  * with Prisma's generated type aliases in some configurations.
  */
 export interface KitSearchResult {
-  id:           string;
-  item_code:    string;
-  release_date: string | null;
-  jpy_price:    number;
-  weight_grams: number | null;
-  availability: string;
-  stock_status: string | null;
-  product_name: string;
-  wishlistCount: number;
+	id: string;
+	item_code: string;
+	release_date: string | null;
+	jpy_price: number;
+	weight_grams: number | null;
+	availability: string;
+	stock_status: string | null;
+	product_name: string;
+	wishlistCount: number;
 }
 
 // ─── Kit CRUD ─────────────────────────────────────────────────────────────────
@@ -48,15 +48,12 @@ export interface KitSearchResult {
  * @param query  - Whitespace-separated search terms (AND semantics).
  * @param limit  - Maximum results to return (default: 10).
  */
-export async function searchKits(
-  query: string,
-  limit = 10,
-): Promise<Kit[]> {
-  return prisma.kit.findMany({
-    where: kitNameFilter(query),
-    orderBy: { product_name: "asc" },
-    take: limit,
-  });
+export async function searchKits(query: string, limit = 10): Promise<Kit[]> {
+	return await prisma.kit.findMany({
+		where: kitNameFilter(query),
+		orderBy: { product_name: "asc" },
+		take: limit,
+	});
 }
 
 /**
@@ -66,18 +63,18 @@ export async function searchKits(
  * @returns The kit with wishlistCount, or null if not found.
  */
 export async function getKitById(id: string): Promise<KitSearchResult | null> {
-  const kit = await prisma.kit.findUnique({ where: { id } });
-  if (!kit) return null;
+	const kit = await prisma.kit.findUnique({ where: { id } });
+	if (!kit) return null;
 
-  const wishlistCount = await prisma.wishlist.count({ where: { kitId: id } });
-  return { ...kit, wishlistCount };
+	const wishlistCount = await prisma.wishlist.count({ where: { kitId: id } });
+	return { ...kit, wishlistCount };
 }
 
 /**
  * Retrieves a single kit by its supplier item code (e.g. "BAN123456").
  */
 export async function getKitByItemCode(itemCode: string): Promise<Kit | null> {
-  return prisma.kit.findUnique({ where: { item_code: itemCode } });
+	return await prisma.kit.findUnique({ where: { item_code: itemCode } });
 }
 
 /**
@@ -88,17 +85,17 @@ export async function getKitByItemCode(itemCode: string): Promise<Kit | null> {
  * @throws Prisma unique-constraint error if item_code already exists.
  */
 export async function createKit(input: CreateKitInput): Promise<Kit> {
-  return prisma.kit.create({
-    data: {
-      product_name:  input.product_name,
-      jpy_price:     input.jpy_price,
-      weight_grams:  input.weight_grams,
-      availability:  input.availability,
-      item_code:     input.item_code ?? input.product_name,
-      release_date:  input.release_date ?? null,
-      stock_status:  input.stock_status ?? null,
-    },
-  });
+	return await prisma.kit.create({
+		data: {
+			product_name: input.product_name,
+			jpy_price: input.jpy_price,
+			weight_grams: input.weight_grams,
+			availability: input.availability,
+			item_code: input.item_code ?? input.product_name,
+			release_date: input.release_date ?? null,
+			stock_status: input.stock_status ?? null,
+		},
+	});
 }
 
 /**
@@ -108,13 +105,13 @@ export async function createKit(input: CreateKitInput): Promise<Kit> {
  * @returns The updated kit, or null if the kit does not exist.
  */
 export async function updateKit(
-  id: string,
-  patch: Partial<Omit<CreateKitInput, "item_code">>,
+	id: string,
+	patch: Partial<Omit<CreateKitInput, "item_code">>,
 ): Promise<Kit | null> {
-  const existing = await prisma.kit.findUnique({ where: { id } });
-  if (!existing) return null;
+	const existing = await prisma.kit.findUnique({ where: { id } });
+	if (!existing) return null;
 
-  return prisma.kit.update({ where: { id }, data: patch });
+	return prisma.kit.update({ where: { id }, data: patch });
 }
 
 // ─── Wishlist ─────────────────────────────────────────────────────────────────
@@ -124,13 +121,13 @@ export async function updateKit(
  * Includes the full Kit object for each entry.
  */
 export async function getUserWishlist(
-  userId: string,
+	userId: string,
 ): Promise<(Wishlist & { kit: Kit })[]> {
-  return prisma.wishlist.findMany({
-    where: { userId },
-    include: { kit: true },
-    orderBy: { createdAt: "asc" },
-  });
+	return await prisma.wishlist.findMany({
+		where: { userId },
+		include: { kit: true },
+		orderBy: { createdAt: "asc" },
+	});
 }
 
 /**
@@ -139,7 +136,7 @@ export async function getUserWishlist(
  * @returns Array of Wishlist rows (userId is the Discord snowflake).
  */
 export async function getKitWishlisters(kitId: string): Promise<Wishlist[]> {
-  return prisma.wishlist.findMany({ where: { kitId } });
+	return await prisma.wishlist.findMany({ where: { kitId } });
 }
 
 /**
@@ -148,13 +145,13 @@ export async function getKitWishlisters(kitId: string): Promise<Wishlist[]> {
  * @throws Prisma unique-constraint error if the entry already exists.
  */
 export async function addToWishlist(
-  userId: string,
-  kitId: string,
-  note?: string,
+	userId: string,
+	kitId: string,
+	note?: string,
 ): Promise<Wishlist> {
-  return prisma.wishlist.create({
-    data: { userId, kitId, note: note ?? null },
-  });
+	return await prisma.wishlist.create({
+		data: { userId, kitId, note: note ?? null },
+	});
 }
 
 /**
@@ -163,11 +160,11 @@ export async function addToWishlist(
  * @returns true if a row was deleted, false if the entry did not exist.
  */
 export async function removeFromWishlist(
-  userId: string,
-  kitId: string,
+	userId: string,
+	kitId: string,
 ): Promise<boolean> {
-  const result = await prisma.wishlist.deleteMany({
-    where: { userId, kitId },
-  });
-  return result.count > 0;
+	const result = await prisma.wishlist.deleteMany({
+		where: { userId, kitId },
+	});
+	return result.count > 0;
 }

@@ -1,5 +1,5 @@
 {
-  description = "Haro — IGC Group Buy Discord Bot";
+  description = "IGC Group Buy Discord Bot + Backend";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -14,6 +14,7 @@
 
       perSystem = {pkgs, ...}: {
         devShells.default = pkgs.mkShell {
+          name = "gunpla-backend";
           buildInputs = with pkgs; [
             deno
             prisma-engines

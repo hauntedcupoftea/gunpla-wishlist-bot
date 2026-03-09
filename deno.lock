@@ -1,9 +1,14 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@*": "1.0.19",
+    "jsr:@std/assert@^1.0.19": "1.0.19",
     "jsr:@std/dotenv@~0.225.6": "0.225.6",
+    "jsr:@std/internal@^1.0.12": "1.0.12",
     "npm:@elysiajs/swagger@^1.2.2": "1.3.1_elysia@1.4.27__@sinclair+typebox@0.34.48__exact-mirror@0.2.7___@sinclair+typebox@0.34.48__file-type@21.3.0__openapi-types@12.1.3_openapi-types@12.1.3",
+    "npm:@libsql/client@*": "0.17.0",
     "npm:@libsql/client@0.17": "0.17.0",
+    "npm:@prisma/adapter-libsql@*": "7.4.1",
     "npm:@prisma/adapter-libsql@^7.4.1": "7.4.1",
     "npm:@prisma/adapter-pg@^7.4.1": "7.4.1",
     "npm:@prisma/client@^7.4.1": "7.4.1_prisma@7.4.1",
@@ -21,8 +26,17 @@
     "npm:prisma@^7.4.1": "7.4.1"
   },
   "jsr": {
+    "@std/assert@1.0.19": {
+      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
     "@std/dotenv@0.225.6": {
       "integrity": "1d6f9db72f565bd26790fa034c26e45ecb260b5245417be76c2279e5734c421b"
+    },
+    "@std/internal@1.0.12": {
+      "integrity": "972a634fd5bc34b242024402972cd5143eac68d8dffaca5eaa4dba30ce17b027"
     }
   },
   "npm": {
@@ -1263,6 +1277,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/assert@^1.0.19",
       "jsr:@std/dotenv@~0.225.6",
       "npm:@elysiajs/swagger@^1.2.2",
       "npm:@libsql/client@0.17",

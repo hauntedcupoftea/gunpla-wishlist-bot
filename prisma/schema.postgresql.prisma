@@ -10,8 +10,6 @@ datasource db {
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 /// Lifecycle of a group buy as a whole.
-/// Status advances are organiser-driven and determine which payment stages
-/// become available to open on individual claims.
 enum GroupBuyStatus {
   /// Accepting new claims.
   OPEN
@@ -19,14 +17,14 @@ enum GroupBuyStatus {
   CLAIMED
   /// Frozen by an administrator. No mutations allowed by anyone.
   LOCKED
-  /// Organiser has placed the order with the supplier.
+  /// Organiser has placed the order with the proxy service.
   /// Kit payment stage can now be opened on claims.
   PURCHASED
-  /// Parcel is sitting at the intermediary warehouse.
-  /// Warehouse fee stage can now be opened (if applicable).
+  /// Parcel is at the forwarding warehouse (e.g. Zenmarket / Sendico depot).
+  /// Domestic shipping payment stage can now be opened (if applicable).
   AT_WAREHOUSE
   /// Parcel has been dispatched internationally.
-  /// Shipping payment stage can now be opened.
+  /// International shipping payment stage can now be opened.
   SHIPPED
   /// Parcel is with customs / import authorities.
   AT_CUSTOMS
@@ -41,15 +39,13 @@ enum GroupBuyStatus {
   CANCELLED
 }
 
-/// Per-claim status, representing both confirmation state and payment
-/// progress. Numbered prefixes are shown in UX to give members a clear
-/// sense of where they are in the journey.
+/// Per-claim status representing confirmation state and payment progress.
 ///
 /// Flow:
 ///   0_PENDING → 1_CONFIRMED
-///   1_CONFIRMED → 2_KIT_PAID (when organiser opens kit payment stage)
-///   2_KIT_PAID → 3_WAREHOUSE_PAID (optional; skipped if no warehouse fee)
-///   2_KIT_PAID or 3_WAREHOUSE_PAID → 4_SHIPPING_PAID
+///   1_CONFIRMED → 2_KIT_PAID
+///   2_KIT_PAID → 3_DOMESTIC_SHIPPING_PAID (optional; skipped if seller covers domestic shipping)
+///   2_KIT_PAID or 3_DOMESTIC_SHIPPING_PAID → 4_SHIPPING_PAID
 ///   4_SHIPPING_PAID → 5_CUSTOMS_PAID
 ///   5_CUSTOMS_PAID → 6_PAID_IN_FULL
 ///   CANCELLED available at any stage.
@@ -58,13 +54,13 @@ enum ClaimStatus {
   PENDING
   /// Organiser has confirmed the claim; no payment is due yet. (Stage 1)
   CONFIRMED
-  /// Member has reported kit payment; organiser has confirmed receipt. (Stage 2)
+  /// Member has paid kit cost; organiser confirmed receipt. (Stage 2)
   KIT_PAID
-  /// Member has reported warehouse fee payment; organiser confirmed. (Stage 3 — optional)
-  WAREHOUSE_PAID
-  /// Member has reported international shipping payment; organiser confirmed. (Stage 4)
+  /// Member has paid domestic shipping (seller→forwarding warehouse); organiser confirmed. (Stage 3 — optional)
+  DOMESTIC_SHIPPING_PAID
+  /// Member has paid international shipping; organiser confirmed. (Stage 4)
   SHIPPING_PAID
-  /// Member has reported customs/duties payment; organiser confirmed. (Stage 5)
+  /// Member has paid customs/duties; organiser confirmed. (Stage 5)
   CUSTOMS_PAID
   /// All charges settled. Terminal success state. (Stage 6)
   PAID_IN_FULL
@@ -74,23 +70,14 @@ enum ClaimStatus {
 
 // ─── Models ──────────────────────────────────────────────────────────────────
 
-/// A gunpla kit in the catalogue. Seeded from HLJ scrape; can also be
-/// added manually via /kit add or the API.
 model Kit {
   id           String  @id @default(uuid())
-  /// Supplier item code (e.g. BAN123456). Used as the unique external key.
   item_code    String  @unique
-  /// Human-readable release date string (e.g. "September 2024").
   release_date String?
-  /// MSRP in JPY. Used for cost proportioning (customs, kit cost splits).
   jpy_price    Int
-  /// Weight of one unit in grams. Used for international shipping split.
   weight_grams Int?
-  /// Where this kit can be sourced (e.g. "HLJ", "AmiAmi", "Manual").
   availability String
-  /// Stock status string from the supplier (e.g. "In Stock", "Pre-Order").
   stock_status String?
-  /// Full product name as shown in the catalogue.
   product_name String
 
   wishlists    Wishlist[]
@@ -99,12 +86,9 @@ model Kit {
   @@index([product_name, item_code])
 }
 
-/// A member's wishlist entry linking them to a kit they want.
 model Wishlist {
   id        String   @id @default(uuid())
-  /// Discord user snowflake ID.
   userId    String
-  /// Optional personal note (e.g. "only if MG version").
   note      String?
   kitId     String
   createdAt DateTime @default(now())
@@ -116,60 +100,50 @@ model Wishlist {
   @@index([userId])
 }
 
-/// A group buy event. Lives inside a Discord forum thread which is the
-/// canonical source of truth for its identity.
 model GroupBuy {
   id         String  @id @default(uuid())
   /// Discord forum thread snowflake ID. One GB per thread.
   threadId   String  @unique
-  /// Discord guild snowflake ID.
   guildId    String
-  /// Discord user ID of the person who created and manages this GB.
   ownerId    String
-  /// Discord user ID of whoever handles payment aggregation and forwarding.
-  /// May differ from the owner (e.g. the owner organises, a buyer consolidates funds).
   buyerId    String?
-  /// Discord user ID of whoever physically receives the parcel for distribution.
   receiverId String?
 
   status GroupBuyStatus @default(OPEN)
 
-  // ── Financials ─────────────────────────────────────────────────────────
-  // All monetary values are in JPY unless explicitly noted.
+  // ── Financials (all JPY) ───────────────────────────────────────────────
   // INR equivalents are computed at display time using inrConversionRate.
 
-  /// Total amount paid to the supplier for all kits in this GB.
-  /// Proportioned to claims by (kit MSRP / total claimed MSRP).
+  /// Total deal price paid to the proxy service (kit cost + proxy fee + %).
+  /// Proportioned to claims by (slot MSRP / total listing MSRP).
   costPrice Int?
 
-  /// Domestic warehouse handling fee (JPY), if the parcel stops at a
-  /// local warehouse before international dispatch.
+  /// Domestic shipping cost in JPY — seller to forwarding warehouse
+  /// (e.g. Zenmarket / Sendico domestic leg). Often ¥0 if seller covers it.
   /// Proportioned to claims by the same MSRP ratio as kit cost.
-  warehouseCost Int?
+  domesticShippingCost Int?
 
-  /// Total international shipping cost (JPY).
-  /// Proportioned to claims by (claim kit weight / total shipping weight).
+  /// Total international shipping cost (forwarding warehouse → India) in JPY.
+  /// Proportioned to claims by (slot weight / total listing weight).
   shippingCost Int?
 
-  /// Total customs / import duties assessed (JPY).
-  /// Proportioned to claims by (kit MSRP / total claimed MSRP).
+  /// Total customs / import duties assessed in JPY.
+  /// Proportioned to claims by (slot MSRP / total listing MSRP).
   customsCost Int?
 
-  /// Sum of all GroupBuyKit.weight_grams for bookkeeping / display.
+  /// Sum of all GroupBuyKit.weight_grams for the full listing.
   totalWeight Int?
 
-  /// Actual courier-weighed parcel weight (grams). Used as the denominator
-  /// for shipping cost splits (may differ from totalWeight due to packaging).
+  /// Actual courier-weighed parcel weight (grams). Stored for display/records.
+  /// The shipping cost split denominator is totalWeight (all slots), not this.
   shippingWeight Int?
 
-  /// Exchange rate used for this specific GB: JPY → INR.
-  /// Set by the buyer at purchase time. Varies per buyer / remittance method.
+  /// JPY → INR conversion rate for this GB. Set by buyer at purchase time.
   inrConversionRate Float?
 
   // ── Tracking ───────────────────────────────────────────────────────────
   shippingTrackingNumber String?
   shippingTrackingUrl    String?
-  /// Indian customs portal tracking URL.
   customsTrackingUrl     String?
 
   createdAt DateTime @default(now())
@@ -183,18 +157,11 @@ model GroupBuy {
   @@index([guildId])
 }
 
-/// A slot for a specific kit inside a group buy.
-/// Multiple slots of the same kit can exist (e.g. 3 people want the same kit).
-/// Each slot is numbered for disambiguation in UX.
 model GroupBuyKit {
   id           String @id @default(uuid())
   groupBuyId   String
   kitId        String
-  /// Per-unit weight override (grams). May differ from Kit.weight_grams if
-  /// the organiser knows the actual packaged weight.
   weight_grams Int
-  /// 1-based slot number within this (groupBuyId, kitId) pair.
-  /// Used for display when multiple slots of the same kit exist.
   slotNumber   Int
 
   groupBuy GroupBuy @relation(fields: [groupBuyId], references: [id])
@@ -207,48 +174,31 @@ model GroupBuyKit {
   @@index([kitId])
 }
 
-/// A single member's claim on one slot of a kit in a group buy.
-/// Tracks both claim state (confirmed / cancelled) and payment progress
-/// through staged payments.
-///
-/// All `calculated*` fields are snapshotted when the organiser sets the
-/// corresponding financial value. They are recalculated across ALL active
-/// claims whenever a financial value changes, so they always reflect the
-/// current split — not a point-in-time snapshot.
 model GroupBuyClaim {
   id            String      @id @default(uuid())
   groupBuyId    String
   groupBuyKitId String
-  /// Discord user snowflake ID of the claimant.
   userId        String
   status        ClaimStatus @default(PENDING)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  // ── Calculated cost splits (all in JPY) ────────────────────────────────
+  // ── Calculated cost splits (all JPY) ────────────────────────────────
+  // Denominator = ALL slots in the listing (proxy-buy model).
   // Recomputed across all active claims on every financial mutation.
-  // INR equivalent = value * GroupBuy.inrConversionRate
 
-  /// This claim's share of GroupBuy.costPrice.
-  /// Formula: (kit.jpy_price / sum of all active claims' kit.jpy_price) * costPrice
+  /// Share of costPrice. Formula: (slot.jpy_price / total listing MSRP) × costPrice
   calculatedKitCost Int?
 
-  /// This claim's share of GroupBuy.warehouseCost (if set).
-  /// Formula: same MSRP proportion as kit cost.
-  calculatedWarehouseCost Int?
+  /// Share of domesticShippingCost (if set). Same MSRP proportion as kit cost.
+  calculatedDomesticShippingCost Int?
 
-  /// This claim's share of GroupBuy.shippingCost.
-  /// Formula: (groupBuyKit.weight_grams / sum of all active claims' weight_grams) * shippingCost
-  /// Note: uses actual claim weights as denominator, NOT GroupBuy.shippingWeight,
-  /// to ensure splits always sum to 100%.
+  /// Share of shippingCost. Formula: (slot.weight_grams / total listing weight) × shippingCost
   calculatedShippingCost Int?
 
-  /// This claim's share of GroupBuy.customsCost.
-  /// Formula: same MSRP proportion as kit cost.
+  /// Share of customsCost. Same MSRP proportion as kit cost.
   calculatedCustomsCost Int?
 
-  // ── Payment event log ──────────────────────────────────────────────────
-  /// Ordered log of all payment events on this claim (member reports + organiser confirmations).
   paymentEvents ClaimPaymentEvent[]
 
   groupBuy    GroupBuy    @relation(fields: [groupBuyId], references: [id])
@@ -262,30 +212,24 @@ model GroupBuyClaim {
 /// Which payment stage a ClaimPaymentEvent pertains to.
 enum PaymentStage {
   KIT
-  WAREHOUSE
+  DOMESTIC_SHIPPING
   SHIPPING
   CUSTOMS
 }
 
-/// An immutable audit-log entry for a payment event on a claim.
-/// Members self-report; organisers confirm. Each action is a separate row.
 model ClaimPaymentEvent {
   id      String @id @default(uuid())
   claimId String
 
-  /// Which cost component this event is about.
   stage PaymentStage
 
   /// "REPORTED" = member says they've paid.
-  /// "CONFIRMED" = organiser has verified receipt.
-  /// "REJECTED"  = organiser rejected the report (member must re-report).
+  /// "CONFIRMED" = organiser verified receipt.
+  /// "REJECTED"  = organiser rejected; member must re-report.
   action String
 
-  /// The Discord user ID who performed this action.
   actorId String
-
-  /// Optional note (e.g. UTR number, rejection reason).
-  note String?
+  note    String?
 
   createdAt DateTime @default(now())
 

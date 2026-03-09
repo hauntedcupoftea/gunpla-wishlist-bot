@@ -21,24 +21,26 @@ function optionalEnv(key: string): string | undefined {
 
 export const env = {
   // ── Bot (required) ────────────────────────────────────────────────────────
-  DISCORD_TOKEN:    requireEnv("DISCORD_TOKEN"),
-  APPLICATION_ID:   requireEnv("APPLICATION_ID"),
+  DISCORD_TOKEN: requireEnv("DISCORD_TOKEN"),
+  APPLICATION_ID: requireEnv("APPLICATION_ID"),
   /// If set, commands register to this guild only (instant propagation).
   /// Omit for global registration (up to 1 hour propagation).
-  GUILD_ID:         Deno.env.get("GUILD_ID"),
-  DB_PROVIDER:      (Deno.env.get("DB_PROVIDER") ?? "postgresql") as "sqlite" | "postgresql",
-  DATABASE_URL:     requireEnv("DATABASE_URL"),
+  GUILD_ID: Deno.env.get("GUILD_ID"),
+  DB_PROVIDER: (Deno.env.get("DB_PROVIDER") ?? "postgresql") as
+    | "sqlite"
+    | "postgresql",
+  DATABASE_URL: requireEnv("DATABASE_URL"),
 
   // ── API (optional — validated at API startup) ─────────────────────────────
   /// Discord OAuth2 client secret (Discord app → OAuth2 settings).
   DISCORD_CLIENT_SECRET: optionalEnv("DISCORD_CLIENT_SECRET"),
   /// Public URL of this API — must match the OAuth2 redirect URI registered
   /// in your Discord app. Example: https://api.yourbot.com
-  API_BASE_URL:          optionalEnv("API_BASE_URL"),
+  API_BASE_URL: optionalEnv("API_BASE_URL"),
   /// Secret for signing JWT session tokens. Use a 32+ char random string.
-  JWT_SECRET:            optionalEnv("JWT_SECRET"),
+  JWT_SECRET: optionalEnv("JWT_SECRET"),
   /// Port the Elysia API server listens on inside the container (default: 3000).
-  API_PORT:              parseInt(Deno.env.get("API_PORT") ?? "3000", 10),
+  API_PORT: parseInt(Deno.env.get("API_PORT") ?? "3000", 10),
 } as const;
 
 export type Env = typeof env;

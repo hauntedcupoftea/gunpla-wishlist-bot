@@ -28,7 +28,7 @@ export function kitNameFilter(query: string) {
   const conditions = words.map((word) =>
     env.DB_PROVIDER === "sqlite"
       ? { product_name: { contains: word } }
-      : { product_name: { contains: word, mode: "insensitive" as const } },
+      : { product_name: { contains: word, mode: "insensitive" as const } }
   );
 
   return conditions.length === 1 ? conditions[0] : { AND: conditions };
@@ -51,6 +51,14 @@ export function fmtInr(amount: number): string {
 }
 
 /**
+ * Formats a fraction as a percentage string (e.g. 0.1036 → "10.36%").
+ * Always shows exactly 2 decimal places to match spreadsheet display.
+ */
+export function fmtPct(fraction: number): string {
+  return `${(fraction * 100).toFixed(2)}%`;
+}
+
+/**
  * Converts a JPY amount to INR using the group buy's conversion rate.
  * Returns null if the rate is not set.
  */
@@ -63,7 +71,7 @@ export function toInr(
 }
 
 /**
- * Formats a cost line showing JPY and, if a rate is available, INR too.
+ * Formats a cost showing JPY and, if a rate is available, INR too.
  *
  * Example: fmtCost(12500, 0.57) → "¥12,500 (₹7,125)"
  * Example: fmtCost(12500, null) → "¥12,500"
@@ -73,7 +81,9 @@ export function fmtCost(
   rate: number | null | undefined,
 ): string {
   const inr = toInr(jpyAmount, rate);
-  return inr !== null ? `${fmtJpy(jpyAmount)} (${fmtInr(inr)})` : fmtJpy(jpyAmount);
+  return inr !== null
+    ? `${fmtJpy(jpyAmount)} (${fmtInr(inr)})`
+    : fmtJpy(jpyAmount);
 }
 
 /**
@@ -81,30 +91,30 @@ export function fmtCost(
  * Used in Discord embeds and API responses.
  */
 export const CLAIM_STATUS_LABEL: Record<string, string> = {
-  PENDING:       "⏳ Stage 0 — Pending confirmation",
-  CONFIRMED:     "✅ Stage 1 — Confirmed",
-  KIT_PAID:      "💴 Stage 2 — Kit payment confirmed",
-  WAREHOUSE_PAID:"📦 Stage 3 — Warehouse fee confirmed",
+  PENDING: "⏳ Stage 0 — Pending confirmation",
+  CONFIRMED: "✅ Stage 1 — Confirmed",
+  KIT_PAID: "💴 Stage 2 — Kit payment confirmed",
+  "DOMESTIC_SHIPPING_PAID": "📦 Stage 3 — Domestic shipping confirmed",
   SHIPPING_PAID: "🚢 Stage 4 — Shipping confirmed",
-  CUSTOMS_PAID:  "🛃 Stage 5 — Customs confirmed",
-  PAID_IN_FULL:  "🎉 Stage 6 — Paid in full",
-  CANCELLED:     "❌ Cancelled",
+  CUSTOMS_PAID: "🛃 Stage 5 — Customs confirmed",
+  PAID_IN_FULL: "🎉 Stage 6 — Paid in full",
+  CANCELLED: "❌ Cancelled",
 };
 
 /**
- * Returns the next expected ClaimStatus after the given one, accounting
- * for whether a warehouse fee exists on this group buy.
+ * Returns the next expected ClaimStatus after the given one, accounting for
+ * whether a domestic shipping cost exists on this group buy.
  * Returns null if the status is terminal (PAID_IN_FULL or CANCELLED).
  */
 export function nextClaimStatus(
   current: string,
-  hasWarehouseCost: boolean,
+  hasDomesticShippingCost: boolean,
 ): string | null {
   const flow: string[] = [
     "PENDING",
     "CONFIRMED",
     "KIT_PAID",
-    ...(hasWarehouseCost ? ["WAREHOUSE_PAID"] : []),
+    ...(hasDomesticShippingCost ? ["DOMESTIC_SHIPPING_PAID"] : []),
     "SHIPPING_PAID",
     "CUSTOMS_PAID",
     "PAID_IN_FULL",
@@ -116,8 +126,10 @@ export function nextClaimStatus(
 
 /**
  * Appends an admin-override notice to a message string when applicable.
- * Keeps command response logic DRY.
  */
-export function withOverrideNote(content: string, adminOverride: boolean): string {
+export function withOverrideNote(
+  content: string,
+  adminOverride: boolean,
+): string {
   return adminOverride ? `${content}\n-# ⚠️ Admin override used.` : content;
 }
