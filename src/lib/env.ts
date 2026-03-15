@@ -20,7 +20,7 @@ function optionalEnv(key: string): string | undefined {
 }
 
 export const env = {
-  // ── Bot (required) ────────────────────────────────────────────────────────
+  // Bot (required)
   DISCORD_TOKEN: requireEnv("DISCORD_TOKEN"),
   APPLICATION_ID: requireEnv("APPLICATION_ID"),
   /// If set, commands register to this guild only (instant propagation).
@@ -31,7 +31,7 @@ export const env = {
     | "postgresql",
   DATABASE_URL: requireEnv("DATABASE_URL"),
 
-  // ── API (optional — validated at API startup) ─────────────────────────────
+  // API (optional — validated at API startup)
   /// Discord OAuth2 client secret (Discord app → OAuth2 settings).
   DISCORD_CLIENT_SECRET: optionalEnv("DISCORD_CLIENT_SECRET"),
   /// Public URL of this API — must match the OAuth2 redirect URI registered

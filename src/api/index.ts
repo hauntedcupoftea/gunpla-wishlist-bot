@@ -61,7 +61,7 @@ export function buildApp() {
         path: "/docs",
       }),
     )
-    // ── Unauthenticated ──────────────────────────────────────────────────────
+    // Unauthenticated
 
     .get(
       "/",
@@ -90,13 +90,13 @@ export function buildApp() {
         },
       },
     )
-    // ── Routes ───────────────────────────────────────────────────────────────
+    // Routes
 
     .use(authRoutes)
     .use(kitRoutes)
     .use(wishlistRoutes)
     .use(groupBuyRoutes)
-    // ── Error handler ────────────────────────────────────────────────────────
+    // Error handler
 
     .onError(({ error, set }) => {
       const message = error instanceof Error

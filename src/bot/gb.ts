@@ -361,7 +361,7 @@ export default {
           "Post a public payment breakdown for all confirmed claimants (organiser/buyer only)",
         )
     )
-    // ── Member ──────────────────────────────────────────────────────────────
+    // Member
 
     .addSubcommand((sub) =>
       sub
@@ -505,7 +505,7 @@ export default {
         )
     ),
 
-  // ─── Autocomplete ──────────────────────────────────────────────────────────
+  // Autocomplete
 
   async autocomplete(interaction) {
     const subcommand = interaction.options.getSubcommand();
@@ -581,7 +581,7 @@ export default {
     await interaction.respond([]);
   },
 
-  // ─── Execute ───────────────────────────────────────────────────────────────
+  // Execute
 
   async execute(interaction) {
     const subcommand = interaction.options.getSubcommand();

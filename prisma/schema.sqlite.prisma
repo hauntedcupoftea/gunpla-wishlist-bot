@@ -7,7 +7,7 @@ datasource db {
   provider = "sqlite"
 }
 
-// ─── Enums ───────────────────────────────────────────────────────────────────
+// Enums
 
 /// Lifecycle of a group buy as a whole.
 enum GroupBuyStatus {
@@ -68,7 +68,7 @@ enum ClaimStatus {
   CANCELLED
 }
 
-// ─── Models ──────────────────────────────────────────────────────────────────
+// Models
 
 model Kit {
   id           String  @id @default(uuid())
@@ -111,7 +111,7 @@ model GroupBuy {
 
   status GroupBuyStatus @default(OPEN)
 
-  // ── Financials (all JPY) ───────────────────────────────────────────────
+  // Financials (all JPY)
   // INR equivalents are computed at display time using inrConversionRate.
 
   /// Total deal price paid to the proxy service (kit cost + proxy fee + %).
@@ -141,7 +141,7 @@ model GroupBuy {
   /// JPY → INR conversion rate for this GB. Set by buyer at purchase time.
   inrConversionRate Float?
 
-  // ── Tracking ───────────────────────────────────────────────────────────
+  // Tracking
   shippingTrackingNumber String?
   shippingTrackingUrl    String?
   customsTrackingUrl     String?
@@ -183,7 +183,7 @@ model GroupBuyClaim {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  // ── Calculated cost splits (all JPY) ────────────────────────────────
+  // Calculated cost splits (all JPY)
   // Denominator = ALL slots in the listing (proxy-buy model).
   // Recomputed across all active claims on every financial mutation.
 

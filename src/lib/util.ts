@@ -1,6 +1,6 @@
 import { env } from "./env.ts";
 
-// ─── Database helpers ─────────────────────────────────────────────────────────
+// Database helpers
 
 /**
  * Returns a Prisma `contains` filter that is case-insensitive on PostgreSQL
@@ -34,7 +34,7 @@ export function kitNameFilter(query: string) {
   return conditions.length === 1 ? conditions[0] : { AND: conditions };
 }
 
-// ─── Formatting helpers ───────────────────────────────────────────────────────
+// Formatting helpers
 
 /**
  * Formats a JPY integer for display (e.g. 12500 → "¥12,500").

@@ -32,14 +32,14 @@ export async function teardownDb(): Promise<void> {
   await testPrisma.$disconnect();
 }
 
-// ─── Sequence counter ─────────────────────────────────────────────────────────
+// Sequence counter
 
 let _seq = 0;
 export function nextId(): string {
   return `test_${String(++_seq).padStart(6, "0")}`;
 }
 
-// ─── Factories ────────────────────────────────────────────────────────────────
+// Factories
 
 export interface KitOpts {
   product_name?: string;

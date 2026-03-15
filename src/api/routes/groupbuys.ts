@@ -17,7 +17,7 @@ import * as SearchService from "../../services/search.service.ts";
 
 export const groupBuyRoutes = new Elysia({ prefix: "/groupbuys" })
   .use(requireAuth)
-  // ── GET /groupbuys ─────────────────────────────────────────────────────────
+  // GET /groupbuys
   .get(
     "/",
     async ({ session, query, set }) => {
@@ -97,7 +97,7 @@ export const groupBuyRoutes = new Elysia({ prefix: "/groupbuys" })
       },
     },
   )
-  // ── GET /groupbuys/:threadId ───────────────────────────────────────────────
+  // GET /groupbuys/:threadId
   .get(
     "/:threadId",
     async ({ params, set }) => {
@@ -119,7 +119,7 @@ export const groupBuyRoutes = new Elysia({ prefix: "/groupbuys" })
       },
     },
   )
-  // ── GET /groupbuys/:threadId/summary ──────────────────────────────────────
+  // GET /groupbuys/:threadId/summary
   .get(
     "/:threadId/summary",
     async ({ params, query, set }) => {
@@ -151,7 +151,7 @@ export const groupBuyRoutes = new Elysia({ prefix: "/groupbuys" })
       },
     },
   )
-  // ── GET /groupbuys/:threadId/claims ───────────────────────────────────────
+  // GET /groupbuys/:threadId/claims
   .get(
     "/:threadId/claims",
     async ({ params, session, set }) => {

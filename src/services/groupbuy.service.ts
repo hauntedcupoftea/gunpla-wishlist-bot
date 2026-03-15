@@ -49,7 +49,7 @@ import type {
 import { prisma } from "../lib/prisma.ts";
 import { CLAIM_STATUS_LABEL, kitNameFilter } from "../lib/util.ts";
 
-// ─── Public types ─────────────────────────────────────────────────────────────
+// Public types
 
 export type GroupBuyFull = GroupBuy & {
   kits: (GroupBuyKit & { kit: Kit; claims: GroupBuyClaim[] })[];
@@ -134,7 +134,7 @@ export interface SetTrackingInput {
   customsTrackingUrl?: string | null;
 }
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
+// Internal helpers
 
 function fetchActiveClaims(groupBuyId: string) {
   return prisma.groupBuyClaim.findMany({
@@ -272,7 +272,7 @@ async function assertStageWasReported(
   }
 }
 
-// ─── Group Buy CRUD ───────────────────────────────────────────────────────────
+// Group Buy CRUD
 
 /**
  * Creates a new group buy anchored to a Discord forum thread.
@@ -402,7 +402,7 @@ export async function transferGroupBuyOwnership(
   });
 }
 
-// ─── Financials ───────────────────────────────────────────────────────────────
+// Financials
 
 /**
  * Updates one or more financial fields on a group buy and immediately
@@ -444,7 +444,7 @@ export async function updateTracking(
   return prisma.groupBuy.update({ where: { id }, data });
 }
 
-// ─── Kit slots ────────────────────────────────────────────────────────────────
+// Kit slots
 
 /**
  * Adds one or more slots of the same kit to a group buy.
@@ -600,7 +600,7 @@ export async function getRemovableKitsForGroupBuy(
     }));
 }
 
-// ─── Claims ───────────────────────────────────────────────────────────────────
+// Claims
 
 /**
  * Creates a claim for a user on the best available slot of a kit.
@@ -813,7 +813,7 @@ export async function transferClaim(
   });
 }
 
-// ─── Payment events ───────────────────────────────────────────────────────────
+// Payment events
 
 /**
  * Records a member's self-reported payment for a stage.
@@ -936,7 +936,7 @@ export async function markPaidInFull(claimId: string): Promise<GroupBuyClaim> {
   });
 }
 
-// ─── Read / reporting ─────────────────────────────────────────────────────────
+// Read / reporting
 
 /**
  * Returns a full cost breakdown for every active claim in a group buy.

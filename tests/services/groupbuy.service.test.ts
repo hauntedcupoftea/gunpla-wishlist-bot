@@ -42,7 +42,7 @@ function test(name: string, fn: () => Promise<void>) {
   });
 }
 
-// ─── createGroupBuy ───────────────────────────────────────────────────────────
+// createGroupBuy
 
 test("createGroupBuy: creates a GB with OPEN status", async () => {
   const gb = await GbService.createGroupBuy({
@@ -71,7 +71,7 @@ test("createGroupBuy: duplicate threadId throws", async () => {
   );
 });
 
-// ─── getGroupBuyByThread ──────────────────────────────────────────────────────
+// getGroupBuyByThread
 
 test("getGroupBuyByThread: returns null for unknown thread", async () => {
   const result = await GbService.getGroupBuyByThread("nope");
@@ -90,7 +90,7 @@ test("getGroupBuyByThread: returns full GB with empty kits and claims", async ()
   assertEquals(gb.claims, []);
 });
 
-// ─── setGroupBuyStatus ────────────────────────────────────────────────────────
+// setGroupBuyStatus
 
 test("setGroupBuyStatus: persists new status", async () => {
   const gb = await makeGb();
@@ -98,7 +98,7 @@ test("setGroupBuyStatus: persists new status", async () => {
   assertEquals(updated.status, "PURCHASED");
 });
 
-// ─── transferGroupBuyOwnership ────────────────────────────────────────────────
+// transferGroupBuyOwnership
 
 test("transferGroupBuyOwnership: changes ownerId", async () => {
   const gb = await makeGb({ ownerId: "u1" });
@@ -106,7 +106,7 @@ test("transferGroupBuyOwnership: changes ownerId", async () => {
   assertEquals(updated.ownerId, "u2");
 });
 
-// ─── updateFinancials + recalculation ─────────────────────────────────────────
+// updateFinancials + recalculation
 
 test("updateFinancials: sets costPrice and recalculates single claim", async () => {
   // 3-slot GB, only one claimed. Claimant should get 1/3 of costPrice
@@ -216,7 +216,7 @@ test("updateFinancials: domesticShippingCost uses MSRP proportion (same as kit c
   assertEquals(updB.calculatedDomesticShippingCost, 300);
 });
 
-// ─── addKitToGroupBuy ─────────────────────────────────────────────────────────
+// addKitToGroupBuy
 
 test("addKitToGroupBuy: creates correct number of slots with sequential numbers", async () => {
   const kit = await makeKit();
@@ -268,7 +268,7 @@ test("addKitToGroupBuy: updates totalWeight on GB", async () => {
   assertEquals(updated.totalWeight, 1000);
 });
 
-// ─── removeKitFromGroupBuy ────────────────────────────────────────────────────
+// removeKitFromGroupBuy
 
 test("removeKitFromGroupBuy: removes highest-numbered unclaimed slot first (LIFO)", async () => {
   const kit = await makeKit();
@@ -307,7 +307,7 @@ test("removeKitFromGroupBuy: throws when trying to remove more slots than availa
   await assertRejects(() => GbService.removeKitFromGroupBuy(gb.id, kit.id, 1));
 });
 
-// ─── claimKit ─────────────────────────────────────────────────────────────────
+// claimKit
 
 test("claimKit: creates a PENDING claim on the best slot", async () => {
   const { gb, kit } = await scaffoldGb(2);
@@ -340,7 +340,7 @@ test("claimKit: throws when kit has no slots in this GB", async () => {
   await assertRejects(() => GbService.claimKit(gb.id, kit.id, "u1"));
 });
 
-// ─── cancelClaim ─────────────────────────────────────────────────────────────
+// cancelClaim
 
 test("cancelClaim: sets status to CANCELLED", async () => {
   const { gb, slots } = await scaffoldGb(1);
@@ -349,7 +349,7 @@ test("cancelClaim: sets status to CANCELLED", async () => {
   assertEquals(result.status, "CANCELLED");
 });
 
-// ─── confirmClaim ─────────────────────────────────────────────────────────────
+// confirmClaim
 
 test("confirmClaim: advances status from PENDING to CONFIRMED", async () => {
   const { gb, slots } = await scaffoldGb(1);
@@ -358,7 +358,7 @@ test("confirmClaim: advances status from PENDING to CONFIRMED", async () => {
   assertEquals(result.status, "CONFIRMED");
 });
 
-// ─── confirmUncontestedClaims ─────────────────────────────────────────────────
+// confirmUncontestedClaims
 
 test("confirmUncontestedClaims: confirms only single-claimant PENDING slots", async () => {
   const { gb, slots } = await scaffoldGb(3);
@@ -384,7 +384,7 @@ test("confirmUncontestedClaims: confirms only single-claimant PENDING slots", as
   assertEquals(updated3.status, "PENDING"); // contested, untouched
 });
 
-// ─── resolveContestedSlot ─────────────────────────────────────────────────────
+// resolveContestedSlot
 
 test("resolveContestedSlot: confirms winner, cancels losers", async () => {
   const { gb, slots } = await scaffoldGb(1);
@@ -408,7 +408,7 @@ test("resolveContestedSlot: confirms winner, cancels losers", async () => {
   assertEquals(l2.status, "CANCELLED");
 });
 
-// ─── transferClaim ────────────────────────────────────────────────────────────
+// transferClaim
 
 test("transferClaim: changes userId on the claim", async () => {
   const { gb, slots } = await scaffoldGb(1);
@@ -425,7 +425,7 @@ test("transferClaim: throws when target already has an active claim for same kit
   await assertRejects(() => GbService.transferClaim(c1.id, "uB"));
 });
 
-// ─── reportPayment ────────────────────────────────────────────────────────────
+// reportPayment
 
 test("reportPayment: creates REPORTED event when stage is open", async () => {
   const { gb, slots } = await scaffoldGb(1, { gbOpts: { costPrice: 9900 } });
@@ -478,7 +478,7 @@ test("reportPayment: throws when already confirmed for that stage", async () => 
   await assertRejects(() => GbService.reportPayment(claim.id, "u1", "KIT"));
 });
 
-// ─── confirmPaymentStage ─────────────────────────────────────────────────────
+// confirmPaymentStage
 
 test("confirmPaymentStage: advances claim status to KIT_PAID", async () => {
   const { gb, slots } = await scaffoldGb(1, { gbOpts: { costPrice: 9900 } });
@@ -537,7 +537,7 @@ test("confirmPaymentStage: throws on double-confirm", async () => {
   );
 });
 
-// ─── rejectPaymentReport ─────────────────────────────────────────────────────
+// rejectPaymentReport
 
 test("rejectPaymentReport: creates REJECTED event without changing claim status", async () => {
   const { gb, slots } = await scaffoldGb(1, { gbOpts: { costPrice: 9900 } });
@@ -560,7 +560,7 @@ test("rejectPaymentReport: creates REJECTED event without changing claim status"
   assertEquals(unchanged.status, "CONFIRMED");
 });
 
-// ─── markPaidInFull ───────────────────────────────────────────────────────────
+// markPaidInFull
 
 test("markPaidInFull: sets status to PAID_IN_FULL", async () => {
   const { gb, slots } = await scaffoldGb(1);
@@ -571,7 +571,7 @@ test("markPaidInFull: sets status to PAID_IN_FULL", async () => {
   assertEquals(result.status, "PAID_IN_FULL");
 });
 
-// ─── getGroupBuySummary ───────────────────────────────────────────────────────
+// getGroupBuySummary
 
 test("getGroupBuySummary: returns empty array when no claims", async () => {
   const { gb } = await scaffoldGb(2);
@@ -657,7 +657,7 @@ test("getGroupBuySummary: rate parameter overrides stored conversion rate", asyn
   assertEquals(row.totalInr, 6500); // uses 0.65, not 0.50
 });
 
-// ─── getClaimableKitsForUser ──────────────────────────────────────────────────
+// getClaimableKitsForUser
 
 test("getClaimableKitsForUser: excludes kits the user has already claimed", async () => {
   const kitA = await makeKit({ product_name: "Kit Alpha" });
@@ -673,7 +673,7 @@ test("getClaimableKitsForUser: excludes kits the user has already claimed", asyn
   assertEquals(names.some((n) => n.includes("Beta")), true);
 });
 
-// ─── getUserClaimOptions ──────────────────────────────────────────────────────
+// getUserClaimOptions
 
 test("getUserClaimOptions: returns only that user's active claims", async () => {
   const { gb, slots } = await scaffoldGb(2);
@@ -688,7 +688,7 @@ test("getUserClaimOptions: returns only that user's active claims", async () => 
   assertEquals(opts.length, 1);
 });
 
-// ─── getAllClaimOptions ───────────────────────────────────────────────────────
+// getAllClaimOptions
 
 test("getAllClaimOptions: returns all active claims across all users", async () => {
   const { gb, slots } = await scaffoldGb(2);
@@ -716,7 +716,7 @@ test("getAllClaimOptions: excludes CANCELLED claims", async () => {
   assertEquals(opts.length, 1);
 });
 
-// ─── listGroupBuysByGuild ─────────────────────────────────────────────────────
+// listGroupBuysByGuild
 
 test("listGroupBuysByGuild: returns only GBs in specified guild", async () => {
   await makeGb({ guildId: "g1", threadId: "t-g1-1" });

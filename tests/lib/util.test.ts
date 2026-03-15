@@ -20,7 +20,7 @@ import {
   withOverrideNote,
 } from "../../src/lib/util.ts";
 
-// ─── fmtJpy ──────────────────────────────────────────────────────────────────
+// fmtJpy
 
 Deno.test("fmtJpy: formats zero", () => {
   assertEquals(fmtJpy(0), "¥0");
@@ -38,7 +38,7 @@ Deno.test("fmtJpy: always starts with ¥", () => {
   assertMatch(fmtJpy(999), /^¥/);
 });
 
-// ─── fmtInr ──────────────────────────────────────────────────────────────────
+// fmtInr
 
 Deno.test("fmtInr: formats zero", () => {
   assertEquals(fmtInr(0), "₹0");
@@ -52,7 +52,7 @@ Deno.test("fmtInr: always starts with ₹", () => {
   assertMatch(fmtInr(500), /^₹/);
 });
 
-// ─── fmtPct ──────────────────────────────────────────────────────────────────
+// fmtPct
 
 Deno.test("fmtPct: always shows exactly 2 decimal places", () => {
   assertEquals(fmtPct(0.1036), "10.36%");
@@ -68,7 +68,7 @@ Deno.test("fmtPct: always ends with %", () => {
   assertMatch(fmtPct(0.5), /%$/);
 });
 
-// ─── toInr ───────────────────────────────────────────────────────────────────
+// toInr
 
 Deno.test("toInr: converts at given rate and rounds", () => {
   assertEquals(toInr(10000, 0.51), 5100);
@@ -87,7 +87,7 @@ Deno.test("toInr: returns null when rate is 0 (falsy guard)", () => {
   assertEquals(toInr(5000, 0), null);
 });
 
-// ─── fmtCost ─────────────────────────────────────────────────────────────────
+// fmtCost
 
 Deno.test("fmtCost: shows only JPY when no rate", () => {
   assertEquals(fmtCost(12500, null), "¥12,500");
@@ -102,7 +102,7 @@ Deno.test("fmtCost: INR is rounded in output", () => {
   assertMatch(fmtCost(3300, 0.51), /₹1,683/);
 });
 
-// ─── nextClaimStatus ─────────────────────────────────────────────────────────
+// nextClaimStatus
 
 Deno.test("nextClaimStatus: full flow WITHOUT domestic shipping", () => {
   const cases: [string, string | null][] = [
@@ -146,7 +146,7 @@ Deno.test("nextClaimStatus: unknown status returns null", () => {
   assertEquals(nextClaimStatus("NONSENSE", false), null);
 });
 
-// ─── withOverrideNote ─────────────────────────────────────────────────────────
+// withOverrideNote
 
 Deno.test("withOverrideNote: no change when adminOverride=false", () => {
   assertEquals(withOverrideNote("Kit added.", false), "Kit added.");
@@ -163,7 +163,7 @@ Deno.test("withOverrideNote: original content is preserved", () => {
   assertMatch(withOverrideNote(msg, true), new RegExp(msg));
 });
 
-// ─── CLAIM_STATUS_LABEL ───────────────────────────────────────────────────────
+// CLAIM_STATUS_LABEL
 
 const ALL_STATUSES = [
   "PENDING",
@@ -196,7 +196,7 @@ Deno.test("CLAIM_STATUS_LABEL: stage numbers are sequential 0-6", () => {
   assertMatch(CLAIM_STATUS_LABEL["PAID_IN_FULL"], /Stage 6/);
 });
 
-// ─── kitNameFilter ────────────────────────────────────────────────────────────
+// kitNameFilter
 
 Deno.test("kitNameFilter: empty string returns empty object (no filter)", () => {
   assertEquals(kitNameFilter(""), {});

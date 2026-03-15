@@ -147,7 +147,7 @@ test("searchGroupBuysByUser: userRoles is populated correctly for organiser+clai
   assertEquals(results[0].userRoles!.includes("claimant"), true);
 });
 
-// ─── searchGroupBuysByKit ─────────────────────────────────────────────────────
+// searchGroupBuysByKit
 
 test("searchGroupBuysByKit: finds GB containing kit by partial name", async () => {
   const kit = await makeKit({ product_name: "HG Unicorn Gundam" });
@@ -243,7 +243,7 @@ test("searchGroupBuysByKit: filters by status", async () => {
   assertEquals(open[0].status, "OPEN");
 });
 
-// ─── autocompleteGroupBuys ────────────────────────────────────────────────────
+// autocompleteGroupBuys
 
 test("autocompleteGroupBuys: returns { name, value } pairs with threadId as value", async () => {
   const kit = await makeKit({ product_name: "RG Exia" });
@@ -276,7 +276,7 @@ test("autocompleteGroupBuys: empty query with userId returns user's GBs", async 
   assertEquals(opts.every((o) => o.value !== "ac_theirs"), true);
 });
 
-// ─── searchGroupBuysByUserWithCount ───────────────────────────────────────────
+// searchGroupBuysByUserWithCount
 
 test("searchGroupBuysByUserWithCount: returns results and total count", async () => {
   await makeGb({ guildId: "gCount", ownerId: "u1", threadId: "cnt1" });
@@ -309,7 +309,7 @@ test("searchGroupBuysByUserWithCount: offset skips correctly", async () => {
   assertEquals(results.length, 2);
 });
 
-// ─── searchGroupBuysByKitWithCount ────────────────────────────────────────────
+// searchGroupBuysByKitWithCount
 
 test("searchGroupBuysByKitWithCount: returns results and total count", async () => {
   const kit = await makeKit({ product_name: "HG Wing Zero" });

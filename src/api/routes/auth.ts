@@ -27,7 +27,7 @@ const COOKIE_OPTIONS = {
 };
 
 export const authRoutes = new Elysia({ prefix: "/auth" })
-  // ── GET /auth/discord ──────────────────────────────────────────────────────
+  // GET /auth/discord
   .get(
     "/discord",
     ({ redirect }) => {
@@ -50,7 +50,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     },
   )
 
-  // ── GET /auth/discord/callback ─────────────────────────────────────────────
+  // GET /auth/discord/callback
   .get(
     "/discord/callback",
     async ({ query, cookie, set, redirect }) => {
@@ -145,7 +145,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     },
   )
 
-  // ── POST /auth/logout ──────────────────────────────────────────────────────
+  // POST /auth/logout
   .post(
     "/logout",
     ({ cookie, set }) => {
@@ -166,7 +166,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     },
   )
 
-  // ── GET /auth/me ───────────────────────────────────────────────────────────
+  // GET /auth/me
   .use(requireAuth)
   .get(
     "/me",

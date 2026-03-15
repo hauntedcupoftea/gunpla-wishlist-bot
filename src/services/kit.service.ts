@@ -10,7 +10,7 @@ import type { Kit, Wishlist } from "../../generated/client.ts";
 import { prisma } from "../lib/prisma.ts";
 import { kitNameFilter } from "../lib/util.ts";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// Types
 
 export interface CreateKitInput {
 	product_name: string;
@@ -39,7 +39,7 @@ export interface KitSearchResult {
 	wishlistCount: number;
 }
 
-// ─── Kit CRUD ─────────────────────────────────────────────────────────────────
+// Kit CRUD
 
 /**
  * Searches kits whose product_name contains ALL words in `query`.
@@ -114,7 +114,7 @@ export async function updateKit(
 	return prisma.kit.update({ where: { id }, data: patch });
 }
 
-// ─── Wishlist ─────────────────────────────────────────────────────────────────
+// Wishlist
 
 /**
  * Retrieves all wishlist entries for a user, ordered by date added.

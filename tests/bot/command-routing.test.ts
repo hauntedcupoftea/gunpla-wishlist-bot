@@ -20,7 +20,7 @@
 
 import { assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert";
 
-// ─── Mock interaction builder ─────────────────────────────────────────────────
+// Mock interaction builder
 
 interface MockInteractionOptions {
   subcommandGroup?: string | null;
@@ -94,7 +94,7 @@ function buildMockInteraction(opts: MockInteractionOptions) {
 
 type MockInteraction = ReturnType<typeof buildMockInteraction>;
 
-// ─── Simulated router ─────────────────────────────────────────────────────────
+// Simulated router
 //
 // This mirrors the routing logic in gb.ts exactly. The actual command file
 // imports Discord.js and Prisma which we don't want to load in tests — instead
@@ -257,7 +257,7 @@ async function route(interaction: MockInteraction): Promise<void> {
   await handler(interaction);
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
 async function invoke(opts: MockInteractionOptions): Promise<MockInteraction> {
   const i = buildMockInteraction(opts);
@@ -265,7 +265,7 @@ async function invoke(opts: MockInteractionOptions): Promise<MockInteraction> {
   return i;
 }
 
-// ─── THE BUG: /gb claims transfer ≠ /gb transfer ─────────────────────────────
+// THE BUG: /gb claims transfer ≠ /gb transfer
 
 Deno.test("ROUTING: /gb claims transfer routes to claims:transfer, NOT to transfer", async () => {
   const i = await invoke({ subcommandGroup: "claims", subcommand: "transfer" });
@@ -279,7 +279,7 @@ Deno.test("ROUTING: /gb transfer routes to transfer, NOT to claims:transfer", as
   assertEquals(i.calls.includes("claims:transfer"), false);
 });
 
-// ─── Top-level subcommands ────────────────────────────────────────────────────
+// Top-level subcommands
 
 const topLevelRoutes: [string, string][] = [
   ["create", "create"],
@@ -305,7 +305,7 @@ for (const [subcommand, expectedHandler] of topLevelRoutes) {
   });
 }
 
-// ─── /gb claims <subcommand> ──────────────────────────────────────────────────
+// /gb claims <subcommand>
 
 const claimsRoutes: [string, string][] = [
   ["claim", "claims:claim"],
@@ -325,7 +325,7 @@ for (const [subcommand, expectedHandler] of claimsRoutes) {
   });
 }
 
-// ─── /gb pay <subcommand> ─────────────────────────────────────────────────────
+// /gb pay <subcommand>
 
 const payRoutes: [string, string][] = [
   ["report", "pay:report"],
@@ -341,7 +341,7 @@ for (const [subcommand, expectedHandler] of payRoutes) {
   });
 }
 
-// ─── No cross-group pollution ─────────────────────────────────────────────────
+// No cross-group pollution
 
 Deno.test("ROUTING: /gb pay confirm does NOT trigger claims:confirm", async () => {
   const i = await invoke({ subcommandGroup: "pay", subcommand: "confirm" });
@@ -366,7 +366,7 @@ Deno.test("ROUTING: /gb claims view is isolated from top-level info", async () =
   assertNotEquals(claimsView.calls, topInfo.calls);
 });
 
-// ─── setdomesticship is NOT setwarehouse ─────────────────────────────────────
+// setdomesticship is NOT setwarehouse
 
 Deno.test("ROUTING: setwarehouse does not exist — would return error reply", async () => {
   const i = await invoke({ subcommandGroup: null, subcommand: "setwarehouse" });
@@ -385,7 +385,7 @@ Deno.test("ROUTING: setdomesticship is a valid top-level subcommand", async () =
   assertEquals(i.calls, ["setdomesticship"]);
 });
 
-// ─── Reply is always emitted ──────────────────────────────────────────────────
+// Reply is always emitted
 
 Deno.test("ROUTING: every valid route emits exactly one reply", async () => {
   const all: MockInteractionOptions[] = [

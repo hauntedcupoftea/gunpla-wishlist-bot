@@ -130,7 +130,7 @@ export function buildGroupBuyEmbed(gb: GroupBuyFull): EmbedBuilder {
     embed.addFields({ name: "Financials", value: financialLines.join("\n") });
   }
 
-  // ── Tracking ────────────────────────────────────────────────────────────
+  // Tracking
   const trackingLines: string[] = [];
   if (gb.shippingTrackingNumber) {
     trackingLines.push(`Tracking #: \`${gb.shippingTrackingNumber}\``);
@@ -155,7 +155,7 @@ export function buildGroupBuyEmbed(gb: GroupBuyFull): EmbedBuilder {
   return embed;
 }
 
-// ─── Balance embed (personal view) ───────────────────────────────────────────
+// Balance embed (personal view)
 
 /**
  * Builds a personal cost breakdown embed for a single user's claims.
@@ -266,7 +266,7 @@ export function buildBalanceEmbed(
   return embed;
 }
 
-// ─── Summary embed (organiser payment table) ──────────────────────────────────
+// Summary embed (organiser payment table)
 
 /**
  * Builds the organiser-facing payment summary (posted publicly to thread).
@@ -359,7 +359,7 @@ export function buildSummaryEmbed(
   return embed;
 }
 
-// ─── Conflict resolution embed ────────────────────────────────────────────────
+// Conflict resolution embed
 
 /**
  * Builds the claim conflict resolution embed for /gb claims manage.
