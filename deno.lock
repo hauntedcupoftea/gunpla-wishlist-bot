@@ -20,6 +20,7 @@
     "npm:dotenv@^17.3.1": "17.3.1",
     "npm:elysia@^1.4.27": "1.4.27_@sinclair+typebox@0.34.48_exact-mirror@0.2.7__@sinclair+typebox@0.34.48_file-type@21.3.2_openapi-types@12.1.3",
     "npm:htmlparser2@^10.1.0": "10.1.0",
+    "npm:jose@^6.2.1": "6.2.1",
     "npm:pg@^8.20.0": "8.20.0",
     "npm:prisma@*": "7.5.0",
     "npm:prisma@^7.5.0": "7.5.0"
@@ -889,6 +890,9 @@
       "integrity": "sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==",
       "bin": true
     },
+    "jose@6.2.1": {
+      "integrity": "sha512-jUaKr1yrbfaImV7R2TN/b3IcZzsw38/chqMpo2XJ7i2F8AfM/lA4G1goC3JVEwg0H7UldTmSt3P68nt31W7/mw=="
+    },
     "js-base64@3.7.8": {
       "integrity": "sha512-hNngCeKxIUQiEUN3GPJOkz4wF/YvdUdbNL9hsBcMQTkKzboD7T/q3OYOuuPZLUE6dBxSGpwhk5mwuDud7JVAow=="
     },
@@ -1334,6 +1338,7 @@
       "npm:dotenv@^17.3.1",
       "npm:elysia@^1.4.27",
       "npm:htmlparser2@^10.1.0",
+      "npm:jose@^6.2.1",
       "npm:pg@^8.20.0",
       "npm:prisma@^7.5.0"
     ]
