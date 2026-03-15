@@ -11,12 +11,7 @@
  * persistent in-memory DB shared across tests).
  */
 
-import {
-  assertEquals,
-  assertExists,
-  type assertGreater,
-  assertRejects,
-} from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import {
   clearDb,
   getDb,
@@ -26,18 +21,16 @@ import {
   makeSlot,
   scaffoldGb,
   setupDb,
-  teardownDb,
 } from "../helpers/mod.ts";
 import * as GbService from "../../src/services/groupbuy.service.ts";
 
+// Top-level await: schema is created before any Deno.test() call is registered.
+// This is the correct Deno pattern — there is no beforeAll hook.
+await setupDb();
+
 const T = { sanitizeResources: false, sanitizeOps: false };
 
-// ─── Lifecycle ────────────────────────────────────────────────────────────────
-
-Deno.test({ name: "setup", ...T, fn: setupDb });
-Deno.test({ name: "teardown", ...T, fn: teardownDb });
-
-// Each test clears the DB. Wrap suites in a group function for readability.
+// Each test wipes all rows before running — full isolation without recreating tables.
 function test(name: string, fn: () => Promise<void>) {
   Deno.test({
     name,

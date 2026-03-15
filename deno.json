@@ -34,10 +34,10 @@
     "db:migrate:dev": "deno run --env -A npm:prisma migrate dev",
     "db:migrate:deploy": "deno run --env -A npm:prisma migrate deploy",
     "db:sync": "diff prisma/schema.sqlite.prisma prisma/schema.postgresql.prisma | grep -v '^[0-9]' | grep -v 'provider'",
-    "test": "deno test --allow-env tests/",
-    "test:unit": "deno test tests/lib/",
-    "test:service": "deno test --allow-env tests/services/",
-    "test:bot": "deno test tests/bot/",
-    "test:watch": "deno test --allow-env --watch tests/"
+    "test": "deno test -A tests/",
+    "test:unit": "deno test -A tests/lib/",
+    "test:service": "deno test -A tests/services/",
+    "test:bot": "deno test -A tests/bot/",
+    "test:watch": "deno test -A --watch tests/"
   }
 }
