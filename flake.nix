@@ -19,6 +19,7 @@
             deno
             prisma-engines
             openssl
+            sqlite
           ];
 
           shellHook = ''

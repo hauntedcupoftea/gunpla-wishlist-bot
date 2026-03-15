@@ -4,7 +4,7 @@ import { PrismaClient } from "../../generated/client.ts";
 import { env } from "./env.ts";
 
 const dbProvider = env.DB_PROVIDER;
-const databaseUrl = env.DATABASE_URL;
+const databaseUrl = Deno.env.get("TEST_DATABASE_URL") ?? env.DATABASE_URL;
 
 if (!databaseUrl) {
   throw new Error(
